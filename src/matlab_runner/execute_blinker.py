@@ -63,7 +63,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--overwrite",
         action="store_true",
-        help="Overwrite existing Parquet outputs.",
+        help="Overwrite existing Pickle outputs.",
     )
     return parser.parse_args()
 
@@ -103,7 +103,7 @@ def _serialise_value(value):
     return value
 
 
-def _prepare_for_parquet(frame: pd.DataFrame) -> pd.DataFrame:
+def _prepare_for_pickle(frame: pd.DataFrame) -> pd.DataFrame:
     """Return a copy of ``frame`` with nested arrays converted to plain Python lists."""
 
     if frame.empty:
@@ -117,12 +117,12 @@ def save_outputs(edf_path: Path, frames: Dict[str, pd.DataFrame], overwrite: boo
     out_dir.mkdir(parents=True, exist_ok=True)
 
     for key, frame in frames.items():
-        target = out_dir / f"{key}.parquet"
+        target = out_dir / f"{key}.pkl"
         if target.exists() and not overwrite:
-            logger.info("Skipping existing Parquet: %s", target)
+            logger.info("Skipping existing Pickle: %s", target)
             continue
-        cleaned = _prepare_for_parquet(frame)
-        cleaned.to_parquet(target, index=False)
+        cleaned = _prepare_for_pickle(frame)
+        cleaned.to_pickle(target)
         logger.info("Saved %s", target)
 
 
@@ -150,7 +150,7 @@ def run_blinker_batch(
         Optional iterable of EDF paths. When omitted all
         ``seg_annotated_raw.edf`` files below ``dataset_root`` are processed.
     overwrite
-        When ``True`` existing Parquet outputs are overwritten.
+        When ``True`` existing Pickle outputs are overwritten.
 
     Returns
     -------
