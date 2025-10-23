@@ -10,6 +10,7 @@ from typing import Dict, Iterable, Optional
 
 import matlab.engine
 import pandas as pd
+import numpy as np
 
 from src.matlab_runner.helper import to_dataframe
 from src.utils.config_utils import get_dataset_root, load_config
@@ -92,6 +93,25 @@ def run_blinker(eng, edf_path: Path) -> Dict[str, pd.DataFrame]:
     return {key: to_dataframe(output[key]) for key in BLINKER_KEYS}
 
 
+def _serialise_value(value):
+    if isinstance(value, np.ndarray):
+        if value.ndim == 0:
+            return value.item()
+        return [_serialise_value(v) for v in value.tolist()]
+    if isinstance(value, (list, tuple)):
+        return [_serialise_value(v) for v in value]
+    return value
+
+
+def _prepare_for_parquet(frame: pd.DataFrame) -> pd.DataFrame:
+    """Return a copy of ``frame`` with nested arrays converted to plain Python lists."""
+
+    if frame.empty:
+        return frame
+
+    return frame.applymap(_serialise_value)
+
+
 def save_outputs(edf_path: Path, frames: Dict[str, pd.DataFrame], overwrite: bool) -> None:
     out_dir = edf_path.parent / "blinker"
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -101,7 +121,8 @@ def save_outputs(edf_path: Path, frames: Dict[str, pd.DataFrame], overwrite: boo
         if target.exists() and not overwrite:
             logger.info("Skipping existing Parquet: %s", target)
             continue
-        frame.to_parquet(target, index=False)
+        cleaned = _prepare_for_parquet(frame)
+        cleaned.to_parquet(target, index=False)
         logger.info("Saved %s", target)
 
 

@@ -9,7 +9,8 @@ from pathlib import Path
 from src.matlab_runner import convert_fif_to_edf, execute_blinker
 from src.utils.config_utils import get_dataset_root, load_config
 
-CONFIG_PATH = Path("config/config.yaml")
+CONFIG_PATH = Path("../config/config.yaml")
+DEFAULT_EEGLAB_ROOT = Path(r"D:\code development\matlab_plugin\eeglab2025.1.0")
 
 
 def main() -> None:
@@ -28,12 +29,15 @@ def main() -> None:
         logging.warning("No FIF files discovered. Nothing to convert.")
 
     eeglab_root_env = os.environ.get("EEGLAB_ROOT")
-    if not eeglab_root_env:
-        raise EnvironmentError(
-            "EEGLAB_ROOT environment variable is not set. Please set it to your EEGLAB installation and rerun."
+    if eeglab_root_env:
+        eeglab_root = Path(eeglab_root_env)
+        logging.info("Using EEGLAB_ROOT from environment: %s", eeglab_root)
+    else:
+        eeglab_root = DEFAULT_EEGLAB_ROOT
+        logging.info(
+            "EEGLAB_ROOT environment variable not set. Falling back to default path: %s",
+            eeglab_root,
         )
-
-    eeglab_root = Path(eeglab_root_env)
 
     logging.info("Running MATLAB Blinker exports")
     processed = execute_blinker.run_blinker_batch(
