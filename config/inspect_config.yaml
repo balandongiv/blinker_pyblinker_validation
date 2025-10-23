@@ -1,0 +1,21 @@
+# Configuration for manual inspection of annotated EEG segments.
+# Use with src.sync_ear_mff.inspection.plot_validated_annotations to plot
+# each segment and verify that CVAT annotations were correctly aligned.
+#
+# Example usage:
+#   from src.sync_ear_mff.inspection import plot_validated_annotations
+#   plot_validated_annotations('config/inspect_config.yaml', batch_process=True)
+#
+# validated_subjects maps subject IDs to the list of session folders
+# that contain seg_annotated_raw.fif files to inspect.
+validated_subjects:
+#  S1:
+#    - S01_20170519_043933
+#    - S01_20170519_043933_2
+#  S2:
+#    - TEST_20170601_042544
+#    - TEST_20170601_042544_2
+
+# Optional key used when generating CVAT annotations. Not required for plotting
+# but included for completeness.
+video_append_key: shift_third_video
