@@ -47,7 +47,7 @@ def convert_file(fif_path: Path, overwrite: bool = False) -> bool:
 
     try:
         raw = mne.io.read_raw_fif(fif_path, preload=True, verbose="ERROR")
-        raw.pick_types(eeg=True, eog=True, emg=False, ecg=False, misc=False)
+        raw.pick(["eeg", "eog"])   # no stim/annotation/count channels
         raw = raw.copy().set_eeg_reference("average")
         sanitise_metadata(raw)
         raw.export(edf_path, fmt="edf", overwrite=True)
