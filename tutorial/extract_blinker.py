@@ -22,7 +22,7 @@ def main() -> None:
     logging.info("Dataset root resolved to %s", dataset_root)
 
     logging.info("Starting FIF -> EDF conversion")
-    converted, total = convert_fif_to_edf.convert_all(dataset_root)
+    converted, total = convert_fif_to_edf.convert_all(dataset_root,overwrite=True)
     if total:
         logging.info("Converted %s/%s FIF files", converted, total)
     else:
@@ -45,7 +45,7 @@ def main() -> None:
         eeglab_root=eeglab_root,
         project_root=execute_blinker.DEFAULT_PROJECT_ROOT,
         blinker_plugin="Blinker1.2.0",
-        overwrite=False,
+        overwrite=True,
     )
     logging.info("Blinker finished for %s EDF files", processed)
 
