@@ -24,13 +24,14 @@ def main():
 
     try:
         out = eng.run_blinker_pipeline_wrap(edf_file, nargout=1)
-        # unpack from the cell array
-        blinks, blinkFits, blinkProps, blinkStats, params, com = out
         print("Pipeline OK. com =", out['com'])
 
         # Example: read a few fields
         blinks = out['blinks']
-        print("Blinker status:", blinks.get('status', 'unknown'))
+        status = 'unknown'
+        if hasattr(blinks, '_fieldnames') and 'status' in blinks._fieldnames:
+            status = blinks['status']
+        print("Blinker status:", status)
 
         # If you need lengths of struct arrays
         # (Engine exposes them as sequence-like; len(...) usually works)
