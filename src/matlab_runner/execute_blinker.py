@@ -1,64 +1,201 @@
-import matlab.engine
-from pathlib import Path
+"""Execute the Blinker MATLAB pipeline for every EDF file in the dataset."""
 
+from __future__ import annotations
+
+import argparse
+import logging
+import os
+from pathlib import Path
+from typing import Dict, Iterable, Optional
+
+import matlab.engine
+import pandas as pd
 
 from src.matlab_runner.helper import to_dataframe
-# ---------- Runner ----------
+from src.utils.config_utils import get_dataset_root, load_config
 
-def main():
-    # Start MATLAB headless
+
+BLINKER_KEYS = ("blinkFits", "blinkProps", "blinkStats", "blinks", "params")
+DEFAULT_PROJECT_ROOT = Path(__file__).resolve().parent
+logger = logging.getLogger(__name__)
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=Path("config/config.yaml"),
+        help="Path to the YAML configuration file used to locate the dataset.",
+    )
+    parser.add_argument(
+        "--dataset-root",
+        type=Path,
+        default=None,
+        help="Override the dataset root directory (paths.raw_downsampled).",
+    )
+    parser.add_argument(
+        "--edf",
+        type=Path,
+        nargs="*",
+        help="Specific EDF files to process. When omitted every"
+        " seg_annotated_raw.edf file inside the dataset root is processed.",
+    )
+    parser.add_argument(
+        "--eeglab-root",
+        type=Path,
+        default=os.environ.get("EEGLAB_ROOT"),
+        help="Path to the EEGLAB installation (defaults to $EEGLAB_ROOT).",
+    )
+    parser.add_argument(
+        "--project-root",
+        type=Path,
+        default=DEFAULT_PROJECT_ROOT,
+        help="Location of the MATLAB runner project to add to the MATLAB path.",
+    )
+    parser.add_argument(
+        "--blinker-plugin",
+        type=str,
+        default="Blinker1.2.0",
+        help="Blinker plugin folder name inside <eeglab_root>/plugins.",
+    )
+    parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Overwrite existing Parquet outputs.",
+    )
+    return parser.parse_args()
+
+
+def iter_edf_files(dataset_root: Path) -> Iterable[Path]:
+    for path in dataset_root.rglob("seg_annotated_raw.edf"):
+        if path.is_file():
+            yield path
+
+
+def start_matlab(eeglab_root: Path, project_root: Path, blinker_plugin: str):
     eng = matlab.engine.start_matlab("-nojvm -nosplash -nodesktop")
 
-    # === EDIT THESE THREE PATHS ===
-    eeglab_root = r"D:\code development\matlab_plugin\eeglab2025.1.0"
-    project_root = r"C:\Users\balan\IdeaProjects\blinker_pyblinker_validation\src\matlab_runner"
-    edf_file = r"/src/matlab_runner/seg_annotated_raw.edf"
+    eng.addpath(eng.genpath(str(project_root)), nargout=0)
+    eng.addpath(str(eeglab_root), nargout=0)
+    eng.eeglab("nogui", nargout=0)
+    eng.addpath(
+        eng.genpath(str(Path(eeglab_root) / "plugins" / blinker_plugin)),
+        nargout=0,
+    )
 
-    # Put your MATLAB code + EEGLAB + Blinker on path
-    eng.addpath(eng.genpath(project_root), nargout=0)
-    eng.addpath(eeglab_root, nargout=0)
-    eng.eeglab('nogui', nargout=0)  # init EEGLAB w/o GUI
-    eng.addpath(eng.genpath(str(Path(eeglab_root) / "plugins" / "Blinker1.2.0")), nargout=0)
+    return eng
 
-    # (Optional) sanity check
-    print("MATLABROOT:", eng.eval("matlabroot", nargout=1))
-    print("getBlinkerDefaults ->", eng.which("getBlinkerDefaults"))
-    print("run_blinker_pipeline ->", eng.which("run_blinker_pipeline"))
 
+def run_blinker(eng, edf_path: Path) -> Dict[str, pd.DataFrame]:
+    output = eng.run_blinker_pipeline_wrap(str(edf_path), nargout=1)
+    return {key: to_dataframe(output[key]) for key in BLINKER_KEYS}
+
+
+def save_outputs(edf_path: Path, frames: Dict[str, pd.DataFrame], overwrite: bool) -> None:
+    out_dir = edf_path.parent / "blinker"
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    for key, frame in frames.items():
+        target = out_dir / f"{key}.parquet"
+        if target.exists() and not overwrite:
+            logger.info("Skipping existing Parquet: %s", target)
+            continue
+        frame.to_parquet(target, index=False)
+        logger.info("Saved %s", target)
+
+
+def run_blinker_batch(
+    dataset_root: Path,
+    eeglab_root: Path,
+    project_root: Path = DEFAULT_PROJECT_ROOT,
+    blinker_plugin: str = "Blinker1.2.0",
+    edf_files: Optional[Iterable[Path]] = None,
+    overwrite: bool = False,
+) -> int:
+    """Run the MATLAB Blinker pipeline across multiple EDF files.
+
+    Parameters
+    ----------
+    dataset_root
+        Dataset directory that contains the EDF files.
+    eeglab_root
+        Location of the EEGLAB installation.
+    project_root
+        MATLAB runner project path to add to the MATLAB search path.
+    blinker_plugin
+        EEGLAB plugin folder name to add to the path.
+    edf_files
+        Optional iterable of EDF paths. When omitted all
+        ``seg_annotated_raw.edf`` files below ``dataset_root`` are processed.
+    overwrite
+        When ``True`` existing Parquet outputs are overwritten.
+
+    Returns
+    -------
+    int
+        Number of EDF files successfully passed through Blinker.
+    """
+
+    if not dataset_root.exists():
+        raise FileNotFoundError(f"Dataset root does not exist: {dataset_root}")
+
+    if not eeglab_root.exists():
+        raise FileNotFoundError(f"EEGLAB root does not exist: {eeglab_root}")
+
+    if edf_files is None:
+        edf_list = list(iter_edf_files(dataset_root))
+    else:
+        edf_list = []
+        for path in edf_files:
+            candidate = Path(path)
+            if candidate.exists():
+                edf_list.append(candidate)
+            else:
+                logger.warning("EDF path does not exist and will be skipped: %s", candidate)
+
+    if not edf_list:
+        logger.warning("No seg_annotated_raw.edf files found.")
+        return 0
+
+    eng = start_matlab(eeglab_root, project_root, blinker_plugin)
+
+    processed = 0
     try:
-        # out must be a single scalar struct returned by your wrap function
-        out = eng.run_blinker_pipeline_wrap(edf_file, nargout=1)
-
-        # Build separate DataFrames
-        blinkFits   = to_dataframe(out['blinkFits'])
-        blinkProps  = to_dataframe(out['blinkProps'])
-        blinkStats  = to_dataframe(out['blinkStats'])
-        blinks      = to_dataframe(out['blinks'])
-        params      = to_dataframe(out['params'])
-
-        # Example: show shapes
-        print("blinkFits  :", blinkFits.shape)
-        print("blinkProps :", blinkProps.shape)
-        print("blinkStats :", blinkStats.shape)
-        print("blinks     :", blinks.shape)
-        print("params     :", params.shape)
-
-        # OPTIONAL: save to CSVs next to the EDF
-        out_dir = Path(edf_file).with_suffix("").parent
-        blinkFits.to_csv("blinkFits.csv", index=False)
-        blinkProps.to_csv("blinkProps.csv", index=False)
-        blinkStats.to_csv("blinkStats.csv", index=False)
-        blinks.to_csv("blinks.csv", index=False)
-        params.to_csv("params.csv", index=False)
-
-        # If you want them as variables available to other modules:
-        return blinkFits, blinkProps, blinkStats, blinks, params
-
-    except matlab.engine.MatlabExecutionError as e:
-        print("MATLAB error:\n", e)
-        raise
+        for edf_path in edf_list:
+            logger.info("Running Blinker on %s", edf_path)
+            frames = run_blinker(eng, edf_path)
+            save_outputs(edf_path, frames, overwrite=overwrite)
+            processed += 1
     finally:
         eng.quit()
+
+    return processed
+
+
+def main() -> None:
+    args = parse_args()
+
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+
+    if args.eeglab_root is None:
+        raise ValueError(
+            "EEGLAB root path not provided. Use --eeglab-root or set $EEGLAB_ROOT."
+        )
+
+    dataset_root = args.dataset_root
+    if dataset_root is None:
+        config = load_config(args.config)
+        dataset_root = get_dataset_root(config)
+
+    run_blinker_batch(
+        dataset_root=dataset_root,
+        eeglab_root=args.eeglab_root,
+        project_root=args.project_root,
+        blinker_plugin=args.blinker_plugin,
+        edf_files=args.edf,
+        overwrite=args.overwrite,
+    )
 
 
 if __name__ == "__main__":
