@@ -6,7 +6,6 @@ import logging
 import pickle
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Sequence
 
 import mne
 from pyblinker.blinker.pyblinker import BlinkDetector
@@ -24,7 +23,6 @@ class NoBlinkDetectedError(BlinkDetectionError):
 class PyBlinkerSettings:
     """Configuration parameters used when running the detector."""
 
-    channels: Sequence[str] | None = None
     filter_low: float | None = None
     filter_high: float | None = None
     resample_rate: float | None = None
@@ -46,12 +44,6 @@ def build_settings(config: dict | None) -> PyBlinkerSettings:
     raw_preprocessing = config.get("raw_preprocessing", {})
     pyblinker_cfg = config.get("pyblinker", {})
 
-    channels = pyblinker_cfg.get("channels")
-    if isinstance(channels, str):
-        channels = [channels]
-    elif channels is not None:
-        channels = list(channels)
-
     filter_low = pyblinker_cfg.get("filter_low_hz", raw_preprocessing.get("highpass_hz"))
     filter_high = pyblinker_cfg.get("filter_high_hz", raw_preprocessing.get("lowpass_hz"))
     resample_rate = pyblinker_cfg.get("resample_hz", raw_preprocessing.get("resample_hz"))
@@ -65,7 +57,6 @@ def build_settings(config: dict | None) -> PyBlinkerSettings:
     overwrite = bool(pyblinker_cfg.get("overwrite", True))
 
     return PyBlinkerSettings(
-        channels=channels,
         filter_low=filter_low,
         filter_high=filter_high,
         resample_rate=resample_rate,
@@ -76,7 +67,7 @@ def build_settings(config: dict | None) -> PyBlinkerSettings:
 
 
 def discover_fif_files(dataset_root: Path) -> list[Path]:
-    """Return all FIF files under ``dataset_root`` sorted by name."""
+    """Return all ``seg_annotated_raw.fif`` files under ``dataset_root``."""
 
     if not dataset_root.exists():
         raise FileNotFoundError(f"Dataset root not found: {dataset_root}")
@@ -84,82 +75,7 @@ def discover_fif_files(dataset_root: Path) -> list[Path]:
     if not dataset_root.is_dir():
         raise NotADirectoryError(f"Dataset root is not a directory: {dataset_root}")
 
-    return sorted(dataset_root.rglob("*.fif"))
-
-
-def _filter_available_channels(raw: mne.io.BaseRaw, candidates: Sequence[str]) -> list[str]:
-    """Return the subset of ``candidates`` present in the raw file."""
-
-    available = [ch for ch in candidates if ch in raw.ch_names]
-    missing = sorted(set(candidates) - set(available))
-    if missing:
-        logging.warning("Ignoring channels not present in FIF: %s", ", ".join(missing))
-    return available
-
-
-def _choose_default_channels(raw: mne.io.BaseRaw) -> Iterable[str]:
-    """Choose default channels prioritising EOG, then EEG, then fall back to all."""
-
-    eog_picks = mne.pick_types(raw.info, eog=True)
-    if len(eog_picks):
-        selected = [raw.ch_names[idx] for idx in eog_picks]
-        logging.info("Using EOG channels for blink detection: %s", ", ".join(selected))
-        return selected
-
-    eeg_picks = mne.pick_types(raw.info, eeg=True)
-    if len(eeg_picks):
-        selected = [raw.ch_names[idx] for idx in eeg_picks]
-        logging.info(
-            "No dedicated EOG channels found; using EEG channels (%s available).",
-            len(selected),
-        )
-        return selected
-
-    logging.warning("No EOG or EEG channels identified; falling back to all channels.")
-    return raw.ch_names
-
-
-def prepare_raw(fif_path: Path, settings: PyBlinkerSettings) -> mne.io.BaseRaw:
-    """Load, optionally pick, filter, and resample the raw FIF data."""
-
-    if not fif_path.exists():
-        raise FileNotFoundError(f"FIF file not found: {fif_path}")
-
-    logging.info("Loading FIF file: %s", fif_path)
-    raw = mne.io.read_raw_fif(fif_path, preload=True, verbose="ERROR")
-
-    if settings.channels:
-        available = _filter_available_channels(raw, settings.channels)
-        if not available:
-            raise BlinkDetectionError(
-                "None of the configured channels are present in the FIF file."
-            )
-        raw.pick(available)
-    else:
-        default_channels = list(_choose_default_channels(raw))
-        if default_channels and set(default_channels) != set(raw.ch_names):
-            raw.pick(default_channels)
-
-    logging.info("Data contains %s channel(s) at %.2f Hz", len(raw.ch_names), raw.info["sfreq"])
-
-    if settings.filter_low is not None or settings.filter_high is not None:
-        logging.info(
-            "Applying band-pass filter: low=%s Hz, high=%s Hz",
-            settings.filter_low,
-            settings.filter_high,
-        )
-        raw.filter(settings.filter_low, settings.filter_high, fir_design="firwin")
-
-    if settings.resample_rate:
-        logging.info("Resampling data to %.2f Hz", settings.resample_rate)
-        raw.resample(settings.resample_rate)
-
-    logging.info(
-        "Prepared raw data with %s samples per channel and sampling rate %.2f Hz",
-        raw.n_times,
-        raw.info["sfreq"],
-    )
-    return raw
+    return sorted(dataset_root.rglob("seg_annotated_raw.fif"))
 
 
 def run_blink_detection(raw: mne.io.BaseRaw, settings: PyBlinkerSettings):
@@ -225,14 +141,23 @@ def process_fif_file(
 ) -> tuple[Path, Path]:
     """Process a single FIF file and persist blink detection outputs."""
 
-    raw = prepare_raw(fif_path, settings)
+    if not fif_path.exists():
+        raise FileNotFoundError(f"FIF file not found: {fif_path}")
+
+    logging.info("Loading FIF file: %s", fif_path)
+    raw = mne.io.read_raw_fif(fif_path, preload=True, verbose="ERROR")
+    logging.info(
+        "Loaded raw data with %s channel(s) at %.2f Hz",
+        len(raw.ch_names),
+        raw.info["sfreq"],
+    )
 
     (
         annotations,
         channel,
         number_good_blinks,
         blink_details,
-        fig_data,
+        _fig_data,
         ch_selected,
     ) = run_blink_detection(raw, settings)
 
@@ -282,14 +207,16 @@ def run_blinker_batch(
     project_root: Path,
     config: dict | None,
 ) -> dict:
-    """Run blink detection for all FIF files found under ``dataset_root``."""
+    """Run blink detection for each ``seg_annotated_raw.fif`` under ``dataset_root``."""
 
     output_root = _resolve_base_output(project_root, config)
     settings = build_settings(config)
 
     fif_files = discover_fif_files(dataset_root)
     if not fif_files:
-        logging.warning("No FIF files discovered under %s", dataset_root)
+        logging.warning(
+            "No seg_annotated_raw.fif files discovered under %s", dataset_root
+        )
         return {
             "processed": 0,
             "total": 0,
