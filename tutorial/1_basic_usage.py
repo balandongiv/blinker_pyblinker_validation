@@ -36,7 +36,7 @@ def plot_blinks(raw_file):
     to_drop_ch = list(set(raw.ch_names) - set(drange))
     raw = raw.drop_channels(to_drop_ch)
 
-    annot, ch, number_good_blinks, df, fig_data, ch_selected = BlinkDetector(raw, visualize=False, annot_label=None,
+    annot, ch, number_good_blinks, blink_details, fig_data, ch_selected = BlinkDetector(raw, visualize=False, annot_label=None,
                                                                              filter_low=0.5, filter_high=30.0, resample_rate=100,
                                                                              n_jobs=2,use_multiprocessing=True).get_blink()
     raw.set_annotations(annot)

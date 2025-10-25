@@ -37,6 +37,15 @@ dataset/
 │   │   │   ├── eeg_clean_epo.fif
 │   │   │   ├── seg_ear.fif # this is EAR in fif format
 │   │   │   ├── ear_eog.fif
+│   │   │   ├── /blinker/
+│   │   │   │  ├── blinkFits.pkl
+│   │   │   │  ├── blinkProps.pkl
+│   │   │   │  ├── blinkStats.pkl
+│   │   │   │  ├── blinks.pkl
+│   │   │   │  ├── params.pkl
+│   │   │   ├── /pyblinker/
+│   │   │   │  ├── selected_ch.pkl
+│   │   │   │  ├── blink_details.pkl
 │   │   ├── S01_20170519_043933_2/
 │   │   ├── S01_20170519_043933_3/
 │   ├── S2/
