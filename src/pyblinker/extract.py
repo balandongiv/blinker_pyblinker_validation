@@ -165,9 +165,6 @@ def process_fif_file(
     logging.info("Primary channel used for annotations: %s", channel)
     logging.info("Detected %s blink(s)", number_good_blinks)
 
-    if not number_good_blinks:
-        raise NoBlinkDetectedError(f"No blinks were detected in {fif_path}")
-
     target_dir = _resolve_output_dir(output_root, fif_path, dataset_root)
 
     selected_path = target_dir / "selected_ch.pkl"
@@ -178,8 +175,6 @@ def process_fif_file(
 
     logging.info("Blink details pickle stored at: %s", blink_details_path)
     logging.info("Selected channel pickle stored at: %s", selected_path)
-
-    raw.set_annotations(annotations)
 
     return selected_path, blink_details_path
 
