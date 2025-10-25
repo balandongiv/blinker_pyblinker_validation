@@ -11,14 +11,6 @@ import mne
 from pyblinker.blinker.pyblinker import BlinkDetector
 
 
-class BlinkDetectionError(RuntimeError):
-    """Base error raised when blink detection fails."""
-
-
-class NoBlinkDetectedError(BlinkDetectionError):
-    """Error raised when the detector reports no blink events."""
-
-
 @dataclass(slots=True)
 class PyBlinkerSettings:
     """Configuration parameters used when running the detector."""
@@ -56,7 +48,7 @@ def build_settings(config: dict | None) -> PyBlinkerSettings:
     n_jobs = int(pyblinker_cfg.get("n_jobs", 1))
     use_multiprocessing = bool(pyblinker_cfg.get("use_multiprocessing", True))
     overwrite = bool(pyblinker_cfg.get("overwrite", True))
-    first_n_channels_raw = pyblinker_cfg.get("first_n_channels")
+    first_n_channels_raw = pyblinker_cfg.get("first_n_channels", 3)
     first_n_channels = (
         int(first_n_channels_raw)
         if first_n_channels_raw is not None
@@ -100,7 +92,15 @@ def run_blink_detection(raw: mne.io.BaseRaw, settings: PyBlinkerSettings):
         n_jobs=settings.n_jobs,
         use_multiprocessing=settings.use_multiprocessing,
     )
-    return detector.get_blink()
+    (
+        _annotations,
+        _channel,
+        _number_good_blinks,
+        blink_details,
+        _fig_data,
+        ch_selected,
+    ) = detector.get_blink()
+    return blink_details, ch_selected
 
 
 def _resolve_output_dir(
@@ -118,10 +118,8 @@ def _resolve_output_dir(
     else:
         relative = fif_path.name
 
-    if isinstance(relative, Path):
-        target_dir = output_root / relative.parent / relative.stem
-    else:
-        target_dir = output_root / Path(relative).stem
+    relative = Path(relative)
+    target_dir = output_root / relative.parent / "pyblinker"
 
     target_dir.mkdir(parents=True, exist_ok=True)
     return target_dir
@@ -129,11 +127,6 @@ def _resolve_output_dir(
 
 def _save_pickle(obj: object, path: Path, overwrite: bool) -> None:
     """Persist ``obj`` as a pickle file respecting the ``overwrite`` flag."""
-
-    if path.exists() and not overwrite:
-        raise BlinkDetectionError(
-            f"Output already exists and overwriting is disabled: {path}"
-        )
 
     with path.open("wb") as handle:
         pickle.dump(obj, handle, protocol=pickle.HIGHEST_PROTOCOL)
@@ -161,11 +154,6 @@ def process_fif_file(
     )
 
     if settings.first_n_channels is not None:
-        if settings.first_n_channels <= 0:
-            raise BlinkDetectionError(
-                "first_n_channels must be a positive integer when provided"
-            )
-
         requested = settings.first_n_channels
         available = len(raw.ch_names)
         if requested < available:
@@ -182,19 +170,7 @@ def process_fif_file(
                 requested,
                 available,
             )
-
-    (
-        annotations,
-        channel,
-        number_good_blinks,
-        blink_details,
-        _fig_data,
-        ch_selected,
-    ) = run_blink_detection(raw, settings)
-
-    logging.info("Selected channel reported by BlinkDetector: %s", ch_selected)
-    logging.info("Primary channel used for annotations: %s", channel)
-    logging.info("Detected %s blink(s)", number_good_blinks)
+    blink_details, ch_selected = run_blink_detection(raw, settings)
 
     target_dir = _resolve_output_dir(output_root, fif_path, dataset_root)
 
@@ -210,7 +186,9 @@ def process_fif_file(
     return selected_path, blink_details_path
 
 
-def _resolve_base_output(project_root: Path, config: dict | None) -> Path:
+def _resolve_base_output(
+    dataset_root: Path, project_root: Path, config: dict | None
+) -> Path:
     """Determine the base directory where pyblinker outputs should live."""
 
     pyblinker_cfg = (config or {}).get("pyblinker", {})
@@ -221,11 +199,10 @@ def _resolve_base_output(project_root: Path, config: dict | None) -> Path:
         if not root.is_absolute():
             root = project_root / root
     else:
-        root = project_root
+        root = dataset_root
 
-    output_root = root / "pyblinker"
-    output_root.mkdir(parents=True, exist_ok=True)
-    return output_root
+    root.mkdir(parents=True, exist_ok=True)
+    return root
 
 
 def run_blinker_batch(
@@ -235,7 +212,7 @@ def run_blinker_batch(
 ) -> dict:
     """Run blink detection for each ``seg_annotated_raw.fif`` under ``dataset_root``."""
 
-    output_root = _resolve_base_output(project_root, config)
+    output_root = _resolve_base_output(dataset_root, project_root, config)
     settings = build_settings(config)
 
     fif_files = discover_fif_files(dataset_root)
@@ -257,12 +234,6 @@ def run_blinker_batch(
         logging.info("Processing FIF file %s", fif_path)
         try:
             process_fif_file(fif_path, output_root, settings, dataset_root)
-        except NoBlinkDetectedError as exc:
-            logging.error("%s", exc)
-            errors[fif_path] = str(exc)
-        except BlinkDetectionError as exc:
-            logging.error("Blink detection failed for %s: %s", fif_path, exc)
-            errors[fif_path] = str(exc)
         except Exception as exc:  # pragma: no cover - defensive guard
             logging.error("Unexpected failure for %s: %s", fif_path, exc)
             errors[fif_path] = repr(exc)
