@@ -29,6 +29,7 @@ class PyBlinkerSettings:
     n_jobs: int = 1
     use_multiprocessing: bool = True
     overwrite: bool = True
+    first_n_channels: int | None = None
 
 
 def build_settings(config: dict | None) -> PyBlinkerSettings:
@@ -55,6 +56,12 @@ def build_settings(config: dict | None) -> PyBlinkerSettings:
     n_jobs = int(pyblinker_cfg.get("n_jobs", 1))
     use_multiprocessing = bool(pyblinker_cfg.get("use_multiprocessing", True))
     overwrite = bool(pyblinker_cfg.get("overwrite", True))
+    first_n_channels_raw = pyblinker_cfg.get("first_n_channels")
+    first_n_channels = (
+        int(first_n_channels_raw)
+        if first_n_channels_raw is not None
+        else None
+    )
 
     return PyBlinkerSettings(
         filter_low=filter_low,
@@ -63,6 +70,7 @@ def build_settings(config: dict | None) -> PyBlinkerSettings:
         n_jobs=n_jobs,
         use_multiprocessing=use_multiprocessing,
         overwrite=overwrite,
+        first_n_channels=first_n_channels,
     )
 
 
@@ -151,6 +159,29 @@ def process_fif_file(
         len(raw.ch_names),
         raw.info["sfreq"],
     )
+
+    if settings.first_n_channels is not None:
+        if settings.first_n_channels <= 0:
+            raise BlinkDetectionError(
+                "first_n_channels must be a positive integer when provided"
+            )
+
+        requested = settings.first_n_channels
+        available = len(raw.ch_names)
+        if requested < available:
+            selected = raw.ch_names[:requested]
+            raw.pick(selected)
+            logging.info(
+                "Restricted raw instance to first %s channel(s): %s",
+                requested,
+                ", ".join(selected),
+            )
+        else:
+            logging.info(
+                "Requested first %s channel(s) but raw only has %s; using all channels",
+                requested,
+                available,
+            )
 
     (
         annotations,
