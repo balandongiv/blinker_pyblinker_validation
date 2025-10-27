@@ -1,3 +1,9 @@
 """Helper utilities for repository scripts."""
 
-from .gdrive_downloader import download_drive_folder, DEFAULT_FOLDER_URL, DEFAULT_DOWNLOAD_DIR  # noqa: F401
+from .gdrive_downloader import (  # noqa: F401
+    DATASET_FOLDER_NAME,
+    DEFAULT_DOWNLOAD_DIR,
+    DEFAULT_FOLDER_URL,
+    download_drive_folder,
+    get_dataset_root,
+)

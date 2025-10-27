@@ -14,13 +14,15 @@ by Git (see ``.gitignore``).
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Iterable, List
 
 import gdown
 
 DEFAULT_FOLDER_URL = "https://drive.google.com/drive/folders/10lRz7p6YxftylNlrZ5GW645fwrKBzhLM?usp=sharing"
-DEFAULT_DOWNLOAD_DIR = Path(__file__).resolve().parents[2] / "download_cache" / "gdrive_folder"
+DATASET_FOLDER_NAME = "drowsy_driving_raja_processed"
+DEFAULT_DOWNLOAD_DIR = Path(__file__).resolve().parents[2] / "download_cache"
 
 
 def _normalise_paths(paths: Iterable[str | Path], root: Path) -> List[Path]:
@@ -49,10 +51,11 @@ def download_drive_folder(
     folder_url:
         Public Google Drive folder URL to download from.
     output_dir:
-        Directory where the contents should be extracted.
+        Directory where the folder should be placed. The dataset itself lives in
+        ``<output_dir>/<dataset-name>``.
     skip_existing:
-        When :data:`True`, the download is skipped if *output_dir* already
-        contains files.
+        When :data:`True`, the download is skipped if the dataset already exists
+        under ``<output_dir>/<dataset-name>``.
     verify_download:
         When :data:`True`, the function verifies that the returned paths exist.
 
@@ -68,9 +71,10 @@ def download_drive_folder(
     """
 
     output_path = Path(output_dir)
+    dataset_root = output_path / DATASET_FOLDER_NAME
 
-    if skip_existing and output_path.exists():
-        existing_files = sorted(p for p in output_path.rglob("*") if p.is_file())
+    if skip_existing and dataset_root.exists():
+        existing_files = sorted(p for p in dataset_root.rglob("*") if p.is_file())
         if existing_files:
             return existing_files
 
@@ -81,10 +85,12 @@ def download_drive_folder(
             folder_url,
             quiet=True,
             use_cookies=False,
-            output=str(output_path),
+            output=str(output_path) + os.sep,
         )
     except Exception as exc:  # pragma: no cover - pass through the original error
-        raise RuntimeError(f"Failed to download folder from {folder_url!r}") from exc
+        raise RuntimeError(
+            f"Failed to download folder from {folder_url!r}: {exc}"
+        ) from exc
 
     downloaded = downloaded or []
     normalised = _normalise_paths(downloaded, output_path)
@@ -96,6 +102,12 @@ def download_drive_folder(
             raise RuntimeError(f"Download incomplete, missing files: {missing_str}")
 
     return normalised
+
+
+def get_dataset_root(output_dir: str | Path = DEFAULT_DOWNLOAD_DIR) -> Path:
+    """Return the expected dataset root directory for *output_dir*."""
+
+    return Path(output_dir) / DATASET_FOLDER_NAME
 
 
 def main() -> None:
@@ -112,7 +124,7 @@ def main() -> None:
     parser.add_argument(
         "--output",
         default=str(DEFAULT_DOWNLOAD_DIR),
-        help="Where to download the folder (defaults to download_cache/gdrive_folder)",
+        help="Where to download the folder (defaults to download_cache/)",
     )
     parser.add_argument(
         "--no-skip",

@@ -18,9 +18,10 @@ class DownloadDriveFolderTests(TestCase):
         """A successful download returns the created files."""
 
         def fake_download(url: str, quiet: bool, use_cookies: bool, output: str) -> List[str]:
-            target_dir = Path(output)
-            target_dir.mkdir(parents=True, exist_ok=True)
-            file_path = target_dir / "example.txt"
+            target_root = Path(output)
+            dataset_root = target_root / gdrive_downloader.DATASET_FOLDER_NAME
+            dataset_root.mkdir(parents=True, exist_ok=True)
+            file_path = dataset_root / "example.txt"
             file_path.write_text("payload", encoding="utf-8")
             return [str(file_path)]
 
@@ -45,7 +46,9 @@ class DownloadDriveFolderTests(TestCase):
 
         with TemporaryDirectory() as tmpdir:
             output_path = Path(tmpdir)
-            existing_file = output_path / "existing.txt"
+            dataset_root = output_path / gdrive_downloader.DATASET_FOLDER_NAME
+            dataset_root.mkdir(parents=True, exist_ok=True)
+            existing_file = dataset_root / "existing.txt"
             existing_file.write_text("cached", encoding="utf-8")
 
             with patch("src.helper.gdrive_downloader.gdown.download_folder") as mock_download:
@@ -71,3 +74,61 @@ class DownloadDriveFolderTests(TestCase):
                     output_dir=tmpdir,
                     skip_existing=False,
                 )
+
+
+class DownloadDriveFolderIntegrationTests(TestCase):
+    """Integration tests that exercise the real Google Drive download."""
+
+    def test_dataset_contains_expected_files(self) -> None:
+        """The shared dataset is downloaded and contains key fixture files."""
+
+        dataset_root = gdrive_downloader.get_dataset_root()
+
+        try:
+            files = gdrive_downloader.download_drive_folder(skip_existing=True)
+        except RuntimeError as exc:
+            message = str(exc)
+            if "Failed to download folder" in message:
+                self.skipTest(
+                    "Google Drive download is not accessible in this environment: "
+                    f"{message}"
+                )
+            raise
+
+        self.assertTrue(files, "Download helper returned no files.")
+        self.assertTrue(
+            dataset_root.is_dir(),
+            f"Dataset root directory is missing: {dataset_root}",
+        )
+
+        expected_paths = [
+            dataset_root / "S1" / "S1.fif",
+            dataset_root
+            / "S1"
+            / "S01_20170519_043933"
+            / "seg_annotated_raw.fif",
+            dataset_root
+            / "S1"
+            / "S01_20170519_043933"
+            / "eeg_clean_epo.fif",
+            dataset_root
+            / "S1"
+            / "S01_20170519_043933"
+            / "seg_ear.fif",
+            dataset_root
+            / "S1"
+            / "S01_20170519_043933"
+            / "ear_eog.fif",
+        ]
+
+        for path in expected_paths:
+            self.assertTrue(
+                path.exists(),
+                f"Expected dataset file missing: {path}",
+            )
+
+        self.assertTrue(
+            (dataset_root / "S2").exists(),
+            "Expected S2 directory to exist in the dataset",
+        )
+
