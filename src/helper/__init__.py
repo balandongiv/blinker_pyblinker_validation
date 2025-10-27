@@ -6,4 +6,5 @@ from .gdrive_downloader import (  # noqa: F401
     DEFAULT_FOLDER_URL,
     download_drive_folder,
     get_dataset_root,
+    REQUIRED_DATASET_ENTRIES,
 )

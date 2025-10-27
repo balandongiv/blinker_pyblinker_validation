@@ -15,6 +15,7 @@ by Git (see ``.gitignore``).
 from __future__ import annotations
 
 import os
+import shutil
 from pathlib import Path
 from typing import Iterable, List
 
@@ -23,6 +24,16 @@ import gdown
 DEFAULT_FOLDER_URL = "https://drive.google.com/drive/folders/10lRz7p6YxftylNlrZ5GW645fwrKBzhLM?usp=sharing"
 DATASET_FOLDER_NAME = "eog_eeg_data"
 DEFAULT_DOWNLOAD_DIR = Path(__file__).resolve().parents[2] / "download_cache"
+REQUIRED_DATASET_ENTRIES = [
+    Path("S1") / "S1.fif",
+    Path("S1") / "S01_20170519_043933" / "seg_annotated_raw.fif",
+    Path("S1") / "S01_20170519_043933" / "eeg_clean_epo.fif",
+    Path("S1") / "S01_20170519_043933" / "seg_ear.fif",
+    Path("S1") / "S01_20170519_043933" / "ear_eog.fif",
+    Path("S1") / "S01_20170519_043933_2",
+    Path("S1") / "S01_20170519_043933_3",
+    Path("S2"),
+]
 
 
 def _normalise_paths(paths: Iterable[str | Path], root: Path) -> List[Path]:
@@ -35,6 +46,26 @@ def _normalise_paths(paths: Iterable[str | Path], root: Path) -> List[Path]:
             path = root / path
         normalised.append(path)
     return normalised
+
+
+def _missing_required_entries(dataset_root: Path) -> List[Path]:
+    """Return the required dataset entries that are missing from *dataset_root*."""
+
+    missing: List[Path] = []
+    for relative in REQUIRED_DATASET_ENTRIES:
+        candidate = dataset_root / relative
+        if not candidate.exists():
+            missing.append(candidate)
+    return missing
+
+
+def _ensure_required_entries(dataset_root: Path) -> None:
+    """Validate that *dataset_root* contains all required dataset entries."""
+
+    missing = _missing_required_entries(dataset_root)
+    if missing:
+        missing_str = ", ".join(str(path) for path in missing)
+        raise RuntimeError(f"Download incomplete, missing files: {missing_str}")
 
 
 def download_drive_folder(
@@ -73,10 +104,15 @@ def download_drive_folder(
     output_path = Path(output_dir)
     dataset_root = output_path / DATASET_FOLDER_NAME
 
-    if skip_existing and dataset_root.exists():
-        existing_files = sorted(p for p in dataset_root.rglob("*") if p.is_file())
-        if existing_files:
-            return existing_files
+    if dataset_root.exists() and skip_existing:
+        if verify_download:
+            missing_entries = _missing_required_entries(dataset_root)
+            if not missing_entries:
+                return sorted(p for p in dataset_root.rglob("*") if p.is_file())
+
+            shutil.rmtree(dataset_root)
+        else:
+            return sorted(p for p in dataset_root.rglob("*") if p.is_file())
 
     output_path.mkdir(parents=True, exist_ok=True)
 
@@ -100,6 +136,8 @@ def download_drive_folder(
         if missing:
             missing_str = ", ".join(str(path) for path in missing)
             raise RuntimeError(f"Download incomplete, missing files: {missing_str}")
+
+        _ensure_required_entries(dataset_root)
 
     return normalised
 

@@ -15,7 +15,7 @@ class TestDatasetDownload(TestCase):
 
         dataset_root = gdrive_downloader.get_dataset_root()
 
-        files = gdrive_downloader.download_drive_folder(skip_existing=False)
+        files = gdrive_downloader.download_drive_folder()
 
         self.assertTrue(files, "Download helper returned no files.")
         self.assertTrue(
@@ -23,18 +23,8 @@ class TestDatasetDownload(TestCase):
             f"Dataset root directory is missing: {dataset_root}",
         )
 
-        expected_paths = [
-            dataset_root / "S1" / "S1.fif",
-            dataset_root / "S1" / "S01_20170519_043933" / "seg_annotated_raw.fif",
-            dataset_root / "S1" / "S01_20170519_043933" / "eeg_clean_epo.fif",
-            dataset_root / "S1" / "S01_20170519_043933" / "seg_ear.fif",
-            dataset_root / "S1" / "S01_20170519_043933" / "ear_eog.fif",
-            dataset_root / "S1" / "S01_20170519_043933_2",
-            dataset_root / "S1" / "S01_20170519_043933_3",
-            dataset_root / "S2",
-        ]
-
-        for path in expected_paths:
+        for relative_path in gdrive_downloader.REQUIRED_DATASET_ENTRIES:
+            path = dataset_root / relative_path
             with self.subTest(path=path):
                 self.assertTrue(
                     path.exists(),
