@@ -2,29 +2,50 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest import TestCase
+from unittest.mock import patch
 
 from src.helper import gdrive_downloader
 
 
-class DownloadDriveFolderIntegrationTests(TestCase):
-    """Integration test that exercises the real Google Drive download."""
+class DownloadDriveFolderTests(TestCase):
+    """Tests that focus on successful downloads."""
 
-    def test_dataset_contains_expected_files(self) -> None:
-        """The shared dataset is downloaded and contains key fixture files."""
+    def test_download_success_returns_files(self) -> None:
+        """A successful download yields file paths that exist on disk."""
+
+        def fake_download(url: str, quiet: bool, use_cookies: bool, output: str):
+            target_root = Path(output)
+            dataset_root = target_root / gdrive_downloader.DATASET_FOLDER_NAME
+            dataset_root.mkdir(parents=True, exist_ok=True)
+            file_path = dataset_root / "example.txt"
+            file_path.write_text("payload", encoding="utf-8")
+            return [str(file_path)]
+
+        with TemporaryDirectory() as tmpdir:
+            with patch(
+                "src.helper.gdrive_downloader.gdown.download_folder",
+                side_effect=fake_download,
+            ) as mock_download:
+                downloaded = gdrive_downloader.download_drive_folder(
+                    folder_url="https://example.com/folder",
+                    output_dir=tmpdir,
+                    skip_existing=False,
+                )
+
+            mock_download.assert_called_once()
+            self.assertEqual(1, len(downloaded))
+            self.assertTrue(downloaded[0].exists())
+            self.assertEqual("payload", downloaded[0].read_text(encoding="utf-8"))
+
+    def test_dataset_downloads_and_contains_required_entries(self) -> None:
+        """The real dataset can be downloaded and key files are present."""
 
         dataset_root = gdrive_downloader.get_dataset_root()
 
-        try:
-            files = gdrive_downloader.download_drive_folder(skip_existing=True)
-        except RuntimeError as exc:
-            message = str(exc)
-            if "Failed to download folder" in message:
-                self.skipTest(
-                    "Google Drive download is not accessible in this environment: "
-                    f"{message}"
-                )
-            raise
+        files = gdrive_downloader.download_drive_folder(skip_existing=False)
 
         self.assertTrue(files, "Download helper returned no files.")
         self.assertTrue(
