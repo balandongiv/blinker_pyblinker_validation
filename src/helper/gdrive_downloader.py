@@ -21,7 +21,7 @@ from typing import Iterable, List
 import gdown
 
 DEFAULT_FOLDER_URL = "https://drive.google.com/drive/folders/10lRz7p6YxftylNlrZ5GW645fwrKBzhLM?usp=sharing"
-DATASET_FOLDER_NAME = "drowsy_driving_raja_processed"
+DATASET_FOLDER_NAME = "eog_eeg_data"
 DEFAULT_DOWNLOAD_DIR = Path(__file__).resolve().parents[2] / "download_cache"
 
 
