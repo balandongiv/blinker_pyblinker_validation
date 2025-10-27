@@ -1,5 +1,6 @@
 # Ignore downloaded test data
 /download_cache/
+/unitest/test_files/
 
 # Bytecode caches
 __pycache__/

@@ -1,184 +1,58 @@
-"""Utilities to download Google Drive folders used in tests.
-
-The module exposes :func:`download_drive_folder` which wraps :mod:`gdown`
-functionality and adds a couple of niceties:
-
-* sensible defaults for this repository,
-* the ability to skip a download when files already exist, and
-* basic error handling so tests can provide actionable failures.
-
-The helper is primarily used by the unit tests to obtain large fixtures that
-should not live in the Git history.  The default download directory is ignored
-by Git (see ``.gitignore``).
-"""
+"""Download and extract unit test data from Google Drive."""
 
 from __future__ import annotations
 
-import os
-import shutil
 from pathlib import Path
-from typing import Iterable, List
-
+from typing import List
+import shutil
 import gdown
 
-DEFAULT_FOLDER_URL = "https://drive.google.com/drive/folders/10lRz7p6YxftylNlrZ5GW645fwrKBzhLM?usp=sharing"
-DATASET_FOLDER_NAME = "eog_eeg_data"
-DEFAULT_DOWNLOAD_DIR = Path(__file__).resolve().parents[2] / "download_cache"
-REQUIRED_DATASET_ENTRIES = [
-    Path("S1") / "S1.fif",
-    Path("S1") / "S01_20170519_043933" / "seg_annotated_raw.fif",
-    Path("S1") / "S01_20170519_043933" / "eeg_clean_epo.fif",
-    Path("S1") / "S01_20170519_043933" / "seg_ear.fif",
-    Path("S1") / "S01_20170519_043933" / "ear_eog.fif",
-    Path("S1") / "S01_20170519_043933_2",
-    Path("S1") / "S01_20170519_043933_3",
-    Path("S2"),
-]
+TEST_DATA_URL = "https://drive.google.com/drive/folders/1yysPglbZ_8c6HcI2CsWmW6vkh3vk7g0L?usp=sharing"
 
 
-def _normalise_paths(paths: Iterable[str | Path], root: Path) -> List[Path]:
-    """Return paths as :class:`Path` objects rooted at *root* when needed."""
-
-    normalised: List[Path] = []
-    for item in paths:
-        path = Path(item)
-        if not path.is_absolute():
-            path = root / path
-        normalised.append(path)
-    return normalised
-
-
-def _missing_required_entries(dataset_root: Path) -> List[Path]:
-    """Return the required dataset entries that are missing from *dataset_root*."""
-
-    missing: List[Path] = []
-    for relative in REQUIRED_DATASET_ENTRIES:
-        candidate = dataset_root / relative
-        if not candidate.exists():
-            missing.append(candidate)
-    return missing
-
-
-def _ensure_required_entries(dataset_root: Path) -> None:
-    """Validate that *dataset_root* contains all required dataset entries."""
-
-    missing = _missing_required_entries(dataset_root)
-    if missing:
-        missing_str = ", ".join(str(path) for path in missing)
-        raise RuntimeError(f"Download incomplete, missing files: {missing_str}")
-
-
-def download_drive_folder(
-    folder_url: str = DEFAULT_FOLDER_URL,
-    output_dir: str | Path = DEFAULT_DOWNLOAD_DIR,
-    *,
-    skip_existing: bool = True,
-    verify_download: bool = True,
-) -> List[Path]:
-    """Download the Google Drive *folder_url* to *output_dir*.
+def download_test_files(destination: Path = Path("unitest/test_files"), url: str = TEST_DATA_URL) -> List[Path]:
+    """Download test data from Google Drive and print full paths.
 
     Parameters
     ----------
-    folder_url:
-        Public Google Drive folder URL to download from.
-    output_dir:
-        Directory where the folder should be placed. The dataset itself lives in
-        ``<output_dir>/<dataset-name>``.
-    skip_existing:
-        When :data:`True`, the download is skipped if the dataset already exists
-        under ``<output_dir>/<dataset-name>``.
-    verify_download:
-        When :data:`True`, the function verifies that the returned paths exist.
+    destination : Path, optional
+        Folder where the downloaded files will be stored.
+    url : str, optional
+        Public Google Drive folder URL to download.
 
     Returns
     -------
-    list[pathlib.Path]
-        Paths to the downloaded files.
-
-    Raises
-    ------
-    RuntimeError
-        If ``gdown`` fails to fetch the folder or the verification fails.
+    List[Path]
+        Absolute paths to the downloaded and extracted files.
     """
+    destination = destination.resolve()
+    destination.mkdir(parents=True, exist_ok=True)
 
-    output_path = Path(output_dir)
-    dataset_root = output_path / DATASET_FOLDER_NAME
+    print(f"Downloading test files to: {destination}")
 
-    if dataset_root.exists() and skip_existing:
-        if verify_download:
-            missing_entries = _missing_required_entries(dataset_root)
-            if not missing_entries:
-                return sorted(p for p in dataset_root.rglob("*") if p.is_file())
+    downloaded = gdown.download_folder(url=url, output=str(destination), quiet=True)
+    if downloaded is None:
+        print("No files were downloaded.")
+        return []
 
-            shutil.rmtree(dataset_root)
+    paths: List[Path] = []
+    for file_str in downloaded:
+        path = Path(file_str)
+        if path.suffix in {".zip", ".tar", ".gz"}:
+            shutil.unpack_archive(str(path), str(destination))
+            path.unlink()
+            for inner in Path(destination).rglob("*"):
+                if inner.is_file():
+                    paths.append(inner.resolve())
         else:
-            return sorted(p for p in dataset_root.rglob("*") if p.is_file())
+            paths.append(path.resolve())
 
-    output_path.mkdir(parents=True, exist_ok=True)
+    print("Downloaded and extracted the following files:")
+    for p in paths:
+        print(f" - {p}")
 
-    try:
-        downloaded = gdown.download_folder(
-            folder_url,
-            quiet=True,
-            use_cookies=False,
-            output=str(output_path) + os.sep,
-        )
-    except Exception as exc:  # pragma: no cover - pass through the original error
-        raise RuntimeError(
-            f"Failed to download folder from {folder_url!r}: {exc}"
-        ) from exc
-
-    downloaded = downloaded or []
-    normalised = _normalise_paths(downloaded, output_path)
-
-    if verify_download:
-        missing = [path for path in normalised if not path.exists()]
-        if missing:
-            missing_str = ", ".join(str(path) for path in missing)
-            raise RuntimeError(f"Download incomplete, missing files: {missing_str}")
-
-        _ensure_required_entries(dataset_root)
-
-    return normalised
+    return paths
 
 
-def get_dataset_root(output_dir: str | Path = DEFAULT_DOWNLOAD_DIR) -> Path:
-    """Return the expected dataset root directory for *output_dir*."""
-
-    return Path(output_dir) / DATASET_FOLDER_NAME
-
-
-def main() -> None:
-    """CLI entry point."""
-
-    import argparse
-
-    parser = argparse.ArgumentParser(description="Download Google Drive test data")
-    parser.add_argument(
-        "--url",
-        default=DEFAULT_FOLDER_URL,
-        help="Google Drive folder URL (defaults to the repository test data folder)",
-    )
-    parser.add_argument(
-        "--output",
-        default=str(DEFAULT_DOWNLOAD_DIR),
-        help="Where to download the folder (defaults to download_cache/)",
-    )
-    parser.add_argument(
-        "--no-skip",
-        action="store_true",
-        help="Force a re-download even if files already exist",
-    )
-    args = parser.parse_args()
-
-    files = download_drive_folder(
-        folder_url=args.url,
-        output_dir=args.output,
-        skip_existing=not args.no_skip,
-    )
-
-    print(f"Downloaded {len(files)} files to {args.output}")
-
-
-if __name__ == "__main__":  # pragma: no cover - CLI convenience
-    main()
+if __name__ == "__main__":
+    download_test_files()
