@@ -101,7 +101,7 @@ class DownloadDriveFolderIntegrationTests(TestCase):
             f"Dataset root directory is missing: {dataset_root}",
         )
 
-        expected_paths = [
+        expected_files = [
             dataset_root / "S1" / "S1.fif",
             dataset_root
             / "S1"
@@ -121,14 +121,23 @@ class DownloadDriveFolderIntegrationTests(TestCase):
             / "ear_eog.fif",
         ]
 
-        for path in expected_paths:
+        for path in expected_files:
             self.assertTrue(
                 path.exists(),
                 f"Expected dataset file missing: {path}",
             )
 
-        self.assertTrue(
-            (dataset_root / "S2").exists(),
-            "Expected S2 directory to exist in the dataset",
-        )
+        expected_directories = [
+            dataset_root / "S1",
+            dataset_root / "S1" / "S01_20170519_043933",
+            dataset_root / "S1" / "S01_20170519_043933_2",
+            dataset_root / "S1" / "S01_20170519_043933_3",
+            dataset_root / "S2",
+        ]
+
+        for directory in expected_directories:
+            self.assertTrue(
+                directory.is_dir(),
+                f"Expected dataset directory missing: {directory}",
+            )
 
