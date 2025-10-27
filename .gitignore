@@ -1,0 +1,5 @@
+# Ignore downloaded test data
+/download_cache/
+
+# Bytecode caches
+__pycache__/
