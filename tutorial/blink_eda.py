@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 import sys
 from dataclasses import dataclass
+from numbers import Real
 from pathlib import Path
 from typing import Callable, List, Sequence, Tuple
 
@@ -22,9 +23,15 @@ PLOT_DURATION = 20.0
 PLOT_START = 0.0
 CLIP_TO_BOUNDS = False
 
-BLINKER_PKL = Path("data_test/S01_20170519_043933_3/blinker/blinkFits.pkl")
-PYBLINKER_PKL = Path("data_test/S01_20170519_043933_3/pyblinker/blink_details.pkl")
-FIF_PATH = Path("data_test/S01_20170519_043933_3/seg_annotated_raw.fif")
+# Resolve default data paths relative to the repository root so the script can be
+# launched from any working directory (e.g., IDEs may default to the project or
+# tutorial folder).  This avoids FileNotFoundError when the relative paths below
+# are interpreted from an unexpected CWD.
+_THIS_DIR = Path(__file__).resolve().parent
+_REPO_ROOT = _THIS_DIR.parent
+BLINKER_PKL = _REPO_ROOT / "data_test/S01_20170519_043933_3/blinker/blinkFits.pkl"
+PYBLINKER_PKL = _REPO_ROOT / "data_test/S01_20170519_043933_3/pyblinker/blink_details.pkl"
+FIF_PATH = _REPO_ROOT / "data_test/S01_20170519_043933_3/seg_annotated_raw.fif"
 OUT_FIF = FIF_PATH.with_name(FIF_PATH.stem + "_with_blinks.fif")
 
 
@@ -143,6 +150,9 @@ def annotate_and_plot_blinks(
         )
 
     raw_end = raw.times[-1]
+    base_orig_time = raw.annotations.orig_time
+    time_offset = raw.first_time if base_orig_time is not None else 0.0
+
     py_annotations, py_kept = _build_annotations(
         df=py_df,
         left_col="left_zero",
@@ -152,6 +162,8 @@ def annotate_and_plot_blinks(
         raw_end=raw_end,
         clip_to_bounds=clip_to_bounds,
         verbose=verbose,
+        orig_time=base_orig_time,
+        time_offset=time_offset,
     )
     blinker_annotations, blinker_kept = _build_annotations(
         df=blinker_df,
@@ -162,20 +174,21 @@ def annotate_and_plot_blinks(
         raw_end=raw_end,
         clip_to_bounds=clip_to_bounds,
         verbose=verbose,
+        orig_time=base_orig_time,
+        time_offset=time_offset,
     )
 
     if verbose:
         _print_summary("PyBlinker", py_summary, py_kept)
         _print_summary("Blinker", blinker_summary, blinker_kept)
-        _print_sample_intervals("PyBlinker", py_annotations)
-        _print_sample_intervals("Blinker", blinker_annotations)
+        _print_sample_intervals("PyBlinker", py_kept)
+        _print_sample_intervals("Blinker", blinker_kept)
         _print_alignment_stats(py_annotations, blinker_annotations)
 
-    merged_annotations = raw.annotations
-    if py_annotations is not None:
-        merged_annotations = merged_annotations + py_annotations
-    if blinker_annotations is not None:
-        merged_annotations = merged_annotations + blinker_annotations
+    merged_annotations = _merge_annotations(
+        raw,
+        additions=[ann for ann in (py_annotations, blinker_annotations) if ann is not None],
+    )
 
     raw.set_annotations(merged_annotations)
 
@@ -274,6 +287,8 @@ def _build_annotations(
     raw_end: float,
     clip_to_bounds: bool,
     verbose: bool,
+    orig_time: object | None,
+    time_offset: float = 0.0,
 ) -> Tuple[mne.Annotations | None, List[Tuple[float, float]]]:
     if df.empty:
         if verbose:
@@ -328,14 +343,20 @@ def _build_annotations(
                 )
             continue
 
-        onsets.append(onset)
+        adjusted_onset = onset + (time_offset if orig_time is not None else 0.0)
+        onsets.append(adjusted_onset)
         durations.append(duration)
         descriptions.append(description)
         kept_intervals.append((onset, offset))
 
     annotations = None
     if onsets:
-        annotations = mne.Annotations(onsets, durations, descriptions)
+        annotations = mne.Annotations(
+            onsets,
+            durations,
+            descriptions,
+            orig_time=orig_time,
+        )
 
     if verbose:
         print(
@@ -343,6 +364,130 @@ def _build_annotations(
         )
 
     return annotations, kept_intervals
+
+
+def _merge_annotations(
+    raw: mne.io.BaseRaw,
+    additions: Sequence[mne.Annotations],
+) -> mne.Annotations:
+    base = raw.annotations
+    if not additions:
+        return base.copy()
+
+    target_orig_time = base.orig_time
+    merged_onsets = base.onset.tolist()
+    merged_durations = base.duration.tolist()
+    merged_descriptions = base.description.tolist()
+    raw_end = float(raw.times[-1])
+    first_time = float(raw.first_time or 0.0)
+
+    for annotation in additions:
+        aligned = _align_annotation_origin(
+            annotation,
+            target_orig_time,
+            first_time=first_time,
+            raw_end=raw_end,
+        )
+        if aligned is None:
+            continue
+
+        if aligned.orig_time != target_orig_time:
+            existing = mne.Annotations(
+                merged_onsets,
+                merged_durations,
+                merged_descriptions,
+                orig_time=target_orig_time,
+            )
+            existing_aligned = _align_annotation_origin(
+                existing,
+                aligned.orig_time,
+                first_time=first_time,
+                raw_end=raw_end,
+            )
+            target_orig_time = aligned.orig_time
+            merged_onsets = existing_aligned.onset.tolist()
+            merged_durations = existing_aligned.duration.tolist()
+            merged_descriptions = existing_aligned.description.tolist()
+
+        merged_onsets.extend(aligned.onset.tolist())
+        merged_durations.extend(aligned.duration.tolist())
+        merged_descriptions.extend(aligned.description.tolist())
+
+    return mne.Annotations(
+        merged_onsets,
+        merged_durations,
+        merged_descriptions,
+        orig_time=target_orig_time,
+    )
+
+
+def _align_annotation_origin(
+    annotations: mne.Annotations | None,
+    target_orig_time: object | None,
+    *,
+    first_time: float,
+    raw_end: float,
+) -> mne.Annotations | None:
+    if annotations is None:
+        return None
+
+    if len(annotations) == 0:
+        return (
+            annotations
+            if annotations.orig_time == target_orig_time
+            else mne.Annotations([], [], [], orig_time=target_orig_time)
+        )
+
+    if annotations.orig_time == target_orig_time:
+        return annotations
+
+    onsets = np.array(annotations.onset, dtype=float, copy=True)
+    durations = np.array(annotations.duration, dtype=float, copy=True)
+    descriptions = annotations.description.tolist()
+    source_orig_time = annotations.orig_time
+
+    if target_orig_time is None:
+        if source_orig_time is None:
+            adjusted_onsets = onsets
+        else:
+            adjusted_onsets = onsets - float(first_time)
+        new_orig_time = None
+    else:
+        if source_orig_time is None:
+            if onsets.size and np.nanmax(onsets) <= raw_end + 1.0:
+                adjusted_onsets = onsets + float(first_time)
+            else:
+                adjusted_onsets = onsets
+        else:
+            source_stamp = _orig_time_to_seconds(source_orig_time)
+            target_stamp = _orig_time_to_seconds(target_orig_time)
+            if source_stamp is None or target_stamp is None:
+                raise RuntimeError(
+                    "Unable to align annotations because orig_time values are not convertible to seconds."
+                )
+            adjusted_onsets = onsets + (source_stamp - target_stamp)
+        new_orig_time = target_orig_time
+
+    return mne.Annotations(
+        adjusted_onsets,
+        durations,
+        descriptions,
+        orig_time=new_orig_time,
+    )
+
+
+def _orig_time_to_seconds(value: object | None) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, Real):
+        return float(value)
+    if isinstance(value, (list, tuple, np.ndarray)) and len(value) == 2:
+        seconds, microseconds = value
+        return float(seconds) + float(microseconds) * 1e-6
+    try:
+        return float(pd.Timestamp(value).timestamp())
+    except Exception as exc:  # pragma: no cover - defensive conversion
+        raise TypeError(f"Unsupported orig_time value: {value!r}") from exc
 
 
 def _print_summary(label: str, summary: AnnotationSummary, kept: List[Tuple[float, float]]):
@@ -353,12 +498,16 @@ def _print_summary(label: str, summary: AnnotationSummary, kept: List[Tuple[floa
     )
 
 
-def _print_sample_intervals(label: str, annotations: mne.Annotations | None, n: int = 3):
-    if annotations is None or len(annotations) == 0:
+def _print_sample_intervals(
+    label: str,
+    intervals: Sequence[Tuple[float, float]],
+    n: int = 3,
+) -> None:
+    if not intervals:
         print(f"{label}: no intervals to preview")
         return
-    onsets = annotations.onset
-    offsets = annotations.onset + annotations.duration
+    onsets = [interval[0] for interval in intervals]
+    offsets = [interval[1] for interval in intervals]
     print(f"{label}: first {n} intervals (s):")
     for onset, offset in zip(onsets[:n], offsets[:n]):
         print(f"  [{onset:.3f}, {offset:.3f}]")
