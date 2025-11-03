@@ -96,14 +96,19 @@ def main() -> None:
     sfreq = float(raw.info["sfreq"])
     logging.info("Sampling frequency: %.2f Hz", sfreq)
 
-    annotations = build_blink_annotations(frames, sfreq)
-    annotations.orig_time = raw.annotations.orig_time
-    logging.info("Created %d blink annotations", len(annotations))
+    blink_annotations = build_blink_annotations(frames, sfreq)
+    blink_annotations = mne.Annotations(
+        blink_annotations.onset,
+        blink_annotations.duration,
+        blink_annotations.description,
+        orig_time=raw.annotations.orig_time,
+    )
+    logging.info("Created %d blink annotations", len(blink_annotations))
 
     if len(raw.annotations):
-        combined = raw.annotations + annotations
+        combined = raw.annotations + blink_annotations
     else:
-        combined = annotations
+        combined = blink_annotations
 
     raw.set_annotations(combined)
 
