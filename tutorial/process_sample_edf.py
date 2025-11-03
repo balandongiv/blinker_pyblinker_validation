@@ -5,7 +5,7 @@ This script demonstrates how to:
 1. Launch MATLAB with EEGLAB and the Blinker plugin via :func:`start_matlab`.
 2. Run the Blinker pipeline on a local EDF recording.
 3. Convert the resulting ``blinkFits`` table into :class:`mne.Annotations`
-   (using the ``leftzero`` and ``rightzero`` sample indices), attach them to
+   (using the ``leftZero`` and ``rightZero`` sample indices), attach them to
    an :class:`mne.io.Raw` object, and visualise the annotated blinks.
 
 Place ``mne_sample_audvis_raw.edf`` next to this file before running the
@@ -48,20 +48,20 @@ def build_blink_annotations(frames: Dict[str, pd.DataFrame], sfreq: float) -> mn
     Returns
     -------
     mne.Annotations
-        Annotation structure where each blink spans ``leftzero`` to
-        ``rightzero`` converted to seconds.
+        Annotation structure where each blink spans ``leftZero`` to
+        ``rightZero`` converted to seconds.
     """
 
     blink_fits = frames["blinkFits"]
-    required_columns = {"leftzero", "rightzero"}
+    required_columns = {"leftZero", "rightZero"}
     missing = required_columns.difference(blink_fits.columns)
     if missing:
         raise KeyError(
             "blinkFits table is missing required columns: " + ", ".join(sorted(missing))
         )
 
-    left_samples = blink_fits["leftzero"].to_numpy(dtype=float)
-    right_samples = blink_fits["rightzero"].to_numpy(dtype=float)
+    left_samples = blink_fits["leftZero"].to_numpy(dtype=float)
+    right_samples = blink_fits["rightZero"].to_numpy(dtype=float)
     onsets = left_samples / sfreq
     durations = (right_samples - left_samples) / sfreq
     descriptions = ["blink"] * len(blink_fits)
@@ -97,12 +97,15 @@ def main() -> None:
     logging.info("Sampling frequency: %.2f Hz", sfreq)
 
     annotations = build_blink_annotations(frames, sfreq)
+    annotations.orig_time = raw.annotations.orig_time
     logging.info("Created %d blink annotations", len(annotations))
 
     if len(raw.annotations):
-        raw.set_annotations(raw.annotations + annotations)
+        combined = raw.annotations + annotations
     else:
-        raw.set_annotations(annotations)
+        combined = annotations
+
+    raw.set_annotations(combined)
 
     logging.info("Launching interactive plot with blink annotations (close the window to exit)")
     raw.plot(block=True)
