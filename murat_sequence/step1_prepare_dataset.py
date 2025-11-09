@@ -100,7 +100,12 @@ def _convert_recording(
     raw.save(fif_path, overwrite=True)
 
     LOGGER.info("Exporting EDF → %s", edf_path)
-    export_raw(raw, edf_path, fmt="edf", overwrite=True)
+    export_raw(
+        fname=str(edf_path),
+        raw=raw,
+        fmt="edf",
+        overwrite=True,
+    )
 
     return ConversionResult(mat_path.stem, fif_path, edf_path)
 

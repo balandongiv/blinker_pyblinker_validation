@@ -61,10 +61,10 @@ def test_convert_all_writes_fif_and_edf(tmp_path, monkeypatch):
 
     export_called: dict[str, bool] = {"value": False}
 
-    def fake_export_raw(raw: FakeRaw, path: str | Path, fmt: str, overwrite: bool = False) -> None:  # noqa: FBT001, FBT002
+    def fake_export_raw(*, fname: str | Path, raw: FakeRaw, fmt: str, overwrite: bool = False) -> None:  # noqa: FBT001, FBT002
         assert isinstance(raw, FakeRaw)
         assert fmt == "edf"
-        Path(path).write_text("edf")
+        Path(fname).write_text("edf")
         export_called["value"] = True
 
     monkeypatch.setattr(step1, "export_raw", fake_export_raw)
