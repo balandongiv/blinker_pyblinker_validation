@@ -1,6 +1,3 @@
-#!/usr/bin/env python
-# ruff: noqa: E402  # allow sys.path adjustments before pyblinker imports
-
 """Compare PyBlinker detections against manual annotations from a MAT dataset.
 
 This tutorial mirrors the workflow used in
