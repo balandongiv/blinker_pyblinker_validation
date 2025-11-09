@@ -29,11 +29,10 @@ from src.murat.download_dataset import (  # noqa: E402 - deferred import for pat
 )
 
 
-DEFAULT_DATASET_FILE = r"../config/murat_2018_dataset.txt"
+DEFAULT_DATASET_FILE = r"C:\Users\balan\IdeaProjects\blinker_pyblinker_validation\config\murat_2018_dataset.txt"
 DEFAULT_ROOT = Path(os.environ.get("MURAT_DATASET_ROOT", str(DOWNLOAD_DEFAULT_ROOT)))
 DEFAULT_SAMPLING_RATE = 200.0
-DEFAULT_CHANNELS = "CH1,CH2"
-DEFAULT_CHANNEL_SEQUENCE: Sequence[str] | None = ("CH1", "CH2")
+DEFAULT_CHANNELS: Sequence[str] | None = ("CH1", "CH2")
 LOGGER = logging.getLogger(__name__)
 
 
@@ -123,7 +122,7 @@ def convert_all(
     root: Path,
     force: bool = False,
     sampling_rate: float | None = DEFAULT_SAMPLING_RATE,
-    channels: Sequence[str] | None = DEFAULT_CHANNEL_SEQUENCE,
+    channels: Sequence[str] | None = DEFAULT_CHANNELS,
 ) -> list[ConversionResult]:
     if not root.exists():
         raise FileNotFoundError(f"Dataset root does not exist: {root}")
@@ -226,7 +225,7 @@ def main(argv: list[str] | None = None) -> int:
     if limit is not None and limit < 0:
         limit = None
 
-    if args.channels and args.channel_spec and args.channel_spec != DEFAULT_CHANNELS:
+    if args.channels and args.channel_spec:
         LOGGER.warning(
             "Both --channels and --channel-spec provided; preferring explicit channel list."
         )
