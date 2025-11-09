@@ -35,8 +35,8 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 DATA_URL = "https://figshare.com/ndownloader/files/12400409"
 
 # 3) Input filenames (provided by the dataset)
-MAT_FILENAME = "CLA-SubjectJ-170510-3St-LRHand-Inter.mat"
-CSV_FILENAME = "CLA-SubjectJ-170510-3St-LRHand-Inter_annotations.csv"
+MAT_FILENAME = "tutorial_data/CLA-SubjectJ-170510-3St-LRHand-Inter.mat"
+CSV_FILENAME = "tutorial_data/CLA-SubjectJ-170510-3St-LRHand-Inter_annotations.csv"
 
 # 4) Full input paths (MAT EEG and its manual-annotation CSV live next to this script)
 MAT_PATH = SCRIPT_DIR / MAT_FILENAME

@@ -17,7 +17,7 @@
 # -------------------------------------------------------------------
 
 paths:
-  DEFAULT_DATASET_FILE: "../murat_2018_dataset.txt"
+  DEFAULT_DATASET_FILE: "config/murat_2018_dataset.txt"
   ACTUAL_DATASET_STORE : "D:\dataset\murat_2018"
   DEBUG_DATASET_STORE : "data/murat_2018"
   DEFAULT_EEGLAB_ROOT: "D:\code development\matlab_plugin\eeglab2025.1.0"
