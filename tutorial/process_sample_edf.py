@@ -114,7 +114,7 @@ def main() -> None:
 
     logging.info("Launching interactive plot with blink annotations (close the window to exit)")
     raw.plot(block=True)
-
+    logging.info(f"Total annotaion:{len(raw.annotations)}")
     logging.info("Blinker processing complete")
 
 
