@@ -32,7 +32,7 @@ from src.murat.download_dataset import (  # noqa: E402 - deferred import for pat
 DEFAULT_DATASET_FILE = r"../murat_2018_dataset.txt"
 DEFAULT_ROOT = Path(os.environ.get("MURAT_DATASET_ROOT", str(DOWNLOAD_DEFAULT_ROOT)))
 DEFAULT_SAMPLING_RATE = 200.0
-DEFAULT_CHANNELS: Sequence[str] | None = None
+DEFAULT_CHANNELS: Sequence[str] | None = ("CH1", "CH2")
 LOGGER = logging.getLogger(__name__)
 
 
