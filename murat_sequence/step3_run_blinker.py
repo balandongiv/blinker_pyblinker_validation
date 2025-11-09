@@ -25,7 +25,9 @@ else:  # pragma: no cover - executed when MATLAB engine is available
     MATLAB_IMPORT_ERROR = None
 
 
-DEFAULT_ROOT = Path(os.environ.get("MURAT_DATASET_ROOT", "D:/dataset/murat_2018"))
+REPO_ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_ROOT_RAW = os.environ.get("MURAT_DATASET_ROOT")
+DEFAULT_ROOT = Path(DEFAULT_ROOT_RAW) if DEFAULT_ROOT_RAW else REPO_ROOT / "data" / "murat_2018"
 BLINKER_KEYS = ("blinks", "blinkFits", "blinkProps", "blinkStats", "params")
 LOGGER = logging.getLogger(__name__)
 

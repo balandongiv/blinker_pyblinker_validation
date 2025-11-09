@@ -26,12 +26,12 @@ from typing import Iterable
 import requests
 
 
-DEFAULT_ROOT = Path(os.environ.get("MURAT_DATASET_ROOT", "D:/dataset/murat_2018"))
+REPO_ROOT = Path(__file__).resolve().parents[3]
+DEFAULT_ROOT_RAW = os.environ.get("MURAT_DATASET_ROOT")
+DEFAULT_ROOT = Path(DEFAULT_ROOT_RAW) if DEFAULT_ROOT_RAW else REPO_ROOT / "data" / "murat_2018"
 DEFAULT_LIMIT_RAW = os.environ.get("MURAT_DATASET_LIMIT")
 DEFAULT_LIMIT = int(DEFAULT_LIMIT_RAW) if DEFAULT_LIMIT_RAW is not None else 3
-DEFAULT_DATASET_FILE = (
-    Path(__file__).resolve().parents[3] / "murat_2018_dataset.txt"
-)
+DEFAULT_DATASET_FILE = REPO_ROOT / "murat_2018_dataset.txt"
 
 LOGGER = logging.getLogger(__name__)
 
