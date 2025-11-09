@@ -11,9 +11,7 @@ from pathlib import Path
 from typing import Iterable, Sequence
 
 import mne
-import numpy as np
 from mne.export import export_raw
-from scipy.io import loadmat
 
 # Ensure the repository root (which contains the ``src`` package) is importable when
 # this script is executed directly via ``python murat_sequence/step1_prepare_dataset``.
@@ -21,8 +19,9 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from pyblinker.utils.evaluation import mat_data  # noqa: E402 - add repo path first
+
 from src.murat.download_dataset import (  # noqa: E402 - deferred import for path setup
-    DEFAULT_DATASET_FILE,
     DEFAULT_LIMIT,
     DEFAULT_ROOT as DOWNLOAD_DEFAULT_ROOT,
     DownloadError,
@@ -30,13 +29,11 @@ from src.murat.download_dataset import (  # noqa: E402 - deferred import for pat
 )
 
 
+DEFAULT_DATASET_FILE = r"../murat_2018_dataset.txt"
 DEFAULT_ROOT = Path(os.environ.get("MURAT_DATASET_ROOT", str(DOWNLOAD_DEFAULT_ROOT)))
+DEFAULT_SAMPLING_RATE = None
+DEFAULT_CHANNELS: Sequence[str] | None = None
 LOGGER = logging.getLogger(__name__)
-
-
-DATA_KEYS = ("data", "signal", "eeg", "EEG")
-SFREQ_KEYS = ("srate", "fs", "sampling_rate", "rate", "sampRate")
-CHANNEL_KEYS = ("chanlabels", "labels", "channels", "chanlocs")
 
 
 @dataclass(slots=True)
@@ -46,123 +43,55 @@ class ConversionResult:
     edf_path: Path
 
 
-def _as_dict(obj) -> dict:
-    if isinstance(obj, dict):
-        return obj
-    if hasattr(obj, "_fieldnames"):
-        return {name: getattr(obj, name) for name in obj._fieldnames}
-    if hasattr(obj, "__dict__"):
-        return obj.__dict__
-    return {}
+def _resolve_dataset_file(default: str) -> Path:
+    """Resolve the dataset list relative to this script."""
+
+    script_dir = Path(__file__).resolve().parent
+    return (script_dir / default).resolve()
 
 
-def _try_get(container, keys: Sequence[str]):
-    mapping = _as_dict(container)
-    for key in keys:
-        if key in mapping:
-            return mapping[key]
-    return None
+def _parse_channel_argument(arg: str | Sequence[str] | None) -> Sequence[str] | None:
+    """Interpret the channel selection argument."""
+
+    if arg is None:
+        return None
+    if isinstance(arg, str):
+        if not arg.strip():
+            return None
+        if any(sep in arg for sep in {",", "-"}):
+            return mat_data.parse_channel_spec(arg)
+        return [part.strip() for part in arg.split() if part.strip()]
+    return arg
 
 
-def _normalise_channels(channel_data, n_channels: int) -> list[str]:
-    names: list[str] = []
-    if channel_data is None:
-        return [f"EEG{idx:03d}" for idx in range(1, n_channels + 1)]
+def _create_raw(
+    mat_path: Path,
+    sampling_rate: float | None,
+    channels: Sequence[str] | None,
+) -> mne.io.BaseRaw:
+    """Load an MNE ``Raw`` instance using the helper utilities shipped with pyblinker."""
 
-    if isinstance(channel_data, (list, tuple, np.ndarray)):
-        names = [str(item).strip() for item in np.ravel(channel_data)]
-    else:
-        names = [str(channel_data).strip()]
-
-    names = [name for name in names if name]
-    if len(names) == n_channels:
-        return names
-
-    if len(names) == 1:
-        return [f"{names[0]}_{idx:03d}" for idx in range(1, n_channels + 1)]
-
-    LOGGER.warning(
-        "Channel name count mismatch (%s vs %s); generating generic labels.",
-        len(names),
-        n_channels,
-    )
-    return [f"EEG{idx:03d}" for idx in range(1, n_channels + 1)]
+    LOGGER.info("Loading MAT file via pyblinker helpers: %s", mat_path)
+    raw = mat_data.load_raw_from_mat(mat_path, sfreq=sampling_rate)
+    if channels:
+        LOGGER.debug("Selecting channels: %s", ", ".join(channels))
+        raw = mat_data.pick_channels(raw, channels)
+    return raw
 
 
-def _ensure_2d(data: np.ndarray) -> np.ndarray:
-    if data.ndim == 1:
-        return data[np.newaxis, :]
-    if data.ndim > 2:
-        raise ValueError(f"Expected 1D or 2D EEG data; got shape {data.shape}")
-    return data
-
-
-def _load_mat(mat_path: Path):
-    LOGGER.info("Loading MAT file: %s", mat_path)
-    return loadmat(mat_path, squeeze_me=True, struct_as_record=False)
-
-
-def _extract_eeg_payload(mat_content: dict):
-    payload = mat_content
-    if "EEG" in mat_content:
-        payload = _as_dict(mat_content["EEG"])
-    return payload
-
-
-def _extract_array(payload: dict):
-    data = _try_get(payload, DATA_KEYS)
-    if data is None:
-        raise KeyError(
-            "Could not locate EEG samples in MAT file. Tried keys: "
-            + ", ".join(DATA_KEYS)
-        )
-    array = np.asarray(data, dtype=float)
-    array = _ensure_2d(array)
-
-    if array.shape[0] > array.shape[1]:
-        LOGGER.info(
-            "Detected samples-first layout (shape %s); transposing to channels × samples.",
-            array.shape,
-        )
-        array = array.T
-    return array
-
-
-def _extract_sfreq(payload: dict) -> float:
-    value = _try_get(payload, SFREQ_KEYS)
-    if value is None:
-        raise KeyError(
-            "Could not determine sampling rate. Tried keys: " + ", ".join(SFREQ_KEYS)
-        )
-    sfreq = float(np.asarray(value).squeeze())
-    if not np.isfinite(sfreq) or sfreq <= 0:
-        raise ValueError(f"Invalid sampling rate extracted from MAT file: {sfreq}")
-    return sfreq
-
-
-def _extract_channel_names(payload: dict, n_channels: int) -> list[str]:
-    channel_data = _try_get(payload, CHANNEL_KEYS)
-    return _normalise_channels(channel_data, n_channels)
-
-
-def _convert_single(
+def _convert_recording(
     mat_path: Path,
     force: bool,
     fif_path: Path,
     edf_path: Path,
+    sampling_rate: float | None,
+    channels: Sequence[str] | None,
 ) -> ConversionResult | None:
     if fif_path.exists() and edf_path.exists() and not force:
         LOGGER.info("Skipping %s (FIF & EDF already exist)", mat_path.parent.name)
         return None
 
-    content = _load_mat(mat_path)
-    payload = _extract_eeg_payload(content)
-    data = _extract_array(payload)
-    sfreq = _extract_sfreq(payload)
-    channel_names = _extract_channel_names(payload, data.shape[0])
-
-    info = mne.create_info(ch_names=channel_names, sfreq=sfreq, ch_types="eeg")
-    raw = mne.io.RawArray(data, info)
+    raw = _create_raw(mat_path, sampling_rate, channels)
 
     fif_path.parent.mkdir(parents=True, exist_ok=True)
     edf_path.parent.mkdir(parents=True, exist_ok=True)
@@ -184,7 +113,12 @@ def iter_mat_files(root: Path) -> Iterable[Path]:
         yield from mat_candidates
 
 
-def convert_all(root: Path, force: bool = False) -> list[ConversionResult]:
+def convert_all(
+    root: Path,
+    force: bool = False,
+    sampling_rate: float | None = DEFAULT_SAMPLING_RATE,
+    channels: Sequence[str] | None = DEFAULT_CHANNELS,
+) -> list[ConversionResult]:
     if not root.exists():
         raise FileNotFoundError(f"Dataset root does not exist: {root}")
 
@@ -194,7 +128,14 @@ def convert_all(root: Path, force: bool = False) -> list[ConversionResult]:
         fif_path = mat_path.with_name(f"{recording_id}.fif")
         edf_path = mat_path.with_name(f"{recording_id}.edf")
         try:
-            result = _convert_single(mat_path, force, fif_path, edf_path)
+            result = _convert_recording(
+                mat_path,
+                force,
+                fif_path,
+                edf_path,
+                sampling_rate,
+                channels,
+            )
         except Exception as exc:  # noqa: BLE001 - log and continue
             LOGGER.error("Failed to convert %s: %s", mat_path, exc)
             continue
@@ -214,8 +155,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--dataset-file",
         type=Path,
-        default=DEFAULT_DATASET_FILE,
-        help="Text file enumerating dataset URLs (default: repository root).",
+        default=None,
+        help=(
+            "Text file enumerating dataset URLs (default: ../murat_2018_dataset.txt "
+            "relative to this script)."
+        ),
     )
     parser.add_argument(
         "--limit",
@@ -237,6 +181,27 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Recreate FIF/EDF files even when they already exist.",
     )
     parser.add_argument(
+        "--sampling-rate",
+        type=float,
+        default=DEFAULT_SAMPLING_RATE,
+        help="Optional sampling rate to provide when the MAT file omits it.",
+    )
+    parser.add_argument(
+        "--channel-spec",
+        type=str,
+        default=None,
+        help=(
+            "Optional channel selection. Accepts comma-separated names or ranges like"
+            " '1-3' which expand to CH1-CH3."
+        ),
+    )
+    parser.add_argument(
+        "--channels",
+        nargs="+",
+        default=None,
+        help="Explicit list of channel names to keep (overrides --channel-spec).",
+    )
+    parser.add_argument(
         "--verbose",
         action="store_true",
         help="Enable debug logging output.",
@@ -255,10 +220,18 @@ def main(argv: list[str] | None = None) -> int:
     if limit is not None and limit < 0:
         limit = None
 
+    if args.channels and args.channel_spec:
+        LOGGER.warning(
+            "Both --channels and --channel-spec provided; preferring explicit channel list."
+        )
+    channel_arg = args.channels if args.channels else args.channel_spec
+    channels = _parse_channel_argument(channel_arg)
+
     if not args.skip_download:
+        dataset_file = args.dataset_file or _resolve_dataset_file(DEFAULT_DATASET_FILE)
         try:
             download_dataset(
-                dataset_file=args.dataset_file,
+                dataset_file=dataset_file,
                 root=args.root,
                 limit=limit,
             )
@@ -267,7 +240,12 @@ def main(argv: list[str] | None = None) -> int:
             return 1
 
     try:
-        results = convert_all(args.root, force=args.force)
+        results = convert_all(
+            args.root,
+            force=args.force,
+            sampling_rate=args.sampling_rate,
+            channels=channels,
+        )
     except Exception as exc:  # noqa: BLE001 - surface the error for CLI
         LOGGER.error("Conversion failed: %s", exc)
         return 1
