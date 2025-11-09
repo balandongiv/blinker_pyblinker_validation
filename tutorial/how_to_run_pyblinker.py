@@ -24,7 +24,6 @@ Adjust :data:`TOLERANCE_SAMPLES` to change how strict the comparison is.
 
 
 # 1) Imports (minimal)
-import os
 import sys
 from pathlib import Path
 
@@ -58,7 +57,6 @@ if str(repo_root) not in sys.path:
 
 # 7) Import helper utilities from this repository (kept top-level for clarity)
 from pyblinker.utils.evaluation import (
-	blink_comparison,
 	blink_detection,
 	mat_data,
 	)
@@ -77,4 +75,3 @@ print(f"[mne] Loaded MAT file with channels: {raw.ch_names}")
 # 11) Run PyBlinker detection on the selected channels
 detection = blink_detection.run_pyblinker_detection(raw, sampling_rate_hz=SAMPLING_RATE_HZ)
 print(f"[detector] Event table rows: {len(detection.events)}")
-hh=1
