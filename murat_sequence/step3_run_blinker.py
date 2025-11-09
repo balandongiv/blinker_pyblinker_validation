@@ -28,13 +28,14 @@ else:  # pragma: no cover - executed when MATLAB engine is available
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_ROOT_RAW = os.environ.get("MURAT_DATASET_ROOT")
 DEFAULT_ROOT = Path(DEFAULT_ROOT_RAW) if DEFAULT_ROOT_RAW else REPO_ROOT / "data" / "murat_2018"
+DEFAULT_EEGLAB_ROOT = Path(r"D:\code development\matlab_plugin\eeglab2025.1.0")
 BLINKER_KEYS = ("blinks", "blinkFits", "blinkProps", "blinkStats", "params")
 LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
 class BlinkerRunConfig:
-    eeglab_root: Path
+    eeglab_root: Path = DEFAULT_EEGLAB_ROOT
     blinker_plugin: str = "Blinker1.2.0"
 
 
@@ -135,7 +136,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--eeglab-root",
         type=Path,
-        required=True,
+        default=DEFAULT_EEGLAB_ROOT,
         help="Path to the EEGLAB installation.",
     )
     parser.add_argument(
