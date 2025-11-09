@@ -1,10 +1,11 @@
-"""Convert murat_2018 ``.mat`` recordings into FIF and EDF files."""
+"""Download and convert murat_2018 ``.mat`` recordings into FIF/EDF files."""
 
 from __future__ import annotations
 
 import argparse
 import logging
 import os
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Sequence
@@ -14,8 +15,22 @@ import numpy as np
 from mne.export import export_raw
 from scipy.io import loadmat
 
+# Ensure the repository root (which contains the ``src`` package) is importable when
+# this script is executed directly via ``python murat_sequence/step1_prepare_dataset``.
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
-DEFAULT_ROOT = Path(os.environ.get("MURAT_DATASET_ROOT", "D:/dataset/murat_2018"))
+from src.murat.download_dataset import (  # noqa: E402 - deferred import for path setup
+    DEFAULT_DATASET_FILE,
+    DEFAULT_LIMIT,
+    DEFAULT_ROOT as DOWNLOAD_DEFAULT_ROOT,
+    DownloadError,
+    download_dataset,
+)
+
+
+DEFAULT_ROOT = Path(os.environ.get("MURAT_DATASET_ROOT", str(DOWNLOAD_DEFAULT_ROOT)))
 LOGGER = logging.getLogger(__name__)
 
 
@@ -197,6 +212,26 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Root directory that contains per-recording subfolders.",
     )
     parser.add_argument(
+        "--dataset-file",
+        type=Path,
+        default=DEFAULT_DATASET_FILE,
+        help="Text file enumerating dataset URLs (default: repository root).",
+    )
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=DEFAULT_LIMIT,
+        help=(
+            "Maximum number of dataset URLs to process. Use a negative value to"
+            " disable the limiter."
+        ),
+    )
+    parser.add_argument(
+        "--skip-download",
+        action="store_true",
+        help="Skip the download phase and convert existing MAT files only.",
+    )
+    parser.add_argument(
         "--force",
         action="store_true",
         help="Recreate FIF/EDF files even when they already exist.",
@@ -215,6 +250,21 @@ def main(argv: list[str] | None = None) -> int:
         level=logging.DEBUG if args.verbose else logging.INFO,
         format="%(asctime)s %(levelname)s %(message)s",
     )
+
+    limit: int | None = args.limit
+    if limit is not None and limit < 0:
+        limit = None
+
+    if not args.skip_download:
+        try:
+            download_dataset(
+                dataset_file=args.dataset_file,
+                root=args.root,
+                limit=limit,
+            )
+        except DownloadError as exc:
+            LOGGER.error("Dataset download failed: %s", exc)
+            return 1
 
     try:
         results = convert_all(args.root, force=args.force)
