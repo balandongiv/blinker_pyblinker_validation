@@ -32,7 +32,8 @@ from src.murat.download_dataset import (  # noqa: E402 - deferred import for pat
 DEFAULT_DATASET_FILE = r"../murat_2018_dataset.txt"
 DEFAULT_ROOT = Path(os.environ.get("MURAT_DATASET_ROOT", str(DOWNLOAD_DEFAULT_ROOT)))
 DEFAULT_SAMPLING_RATE = 200.0
-DEFAULT_CHANNELS: Sequence[str] | None = ("CH1", "CH2")
+DEFAULT_CHANNELS = "CH1,CH2"
+DEFAULT_CHANNEL_SEQUENCE: Sequence[str] | None = ("CH1", "CH2")
 LOGGER = logging.getLogger(__name__)
 
 
@@ -122,7 +123,7 @@ def convert_all(
     root: Path,
     force: bool = False,
     sampling_rate: float | None = DEFAULT_SAMPLING_RATE,
-    channels: Sequence[str] | None = DEFAULT_CHANNELS,
+    channels: Sequence[str] | None = DEFAULT_CHANNEL_SEQUENCE,
 ) -> list[ConversionResult]:
     if not root.exists():
         raise FileNotFoundError(f"Dataset root does not exist: {root}")
@@ -194,7 +195,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--channel-spec",
         type=str,
-        default=None,
+        default=DEFAULT_CHANNELS,
         help=(
             "Optional channel selection. Accepts comma-separated names or ranges like"
             " '1-3' which expand to CH1-CH3."
@@ -225,7 +226,7 @@ def main(argv: list[str] | None = None) -> int:
     if limit is not None and limit < 0:
         limit = None
 
-    if args.channels and args.channel_spec:
+    if args.channels and args.channel_spec and args.channel_spec != DEFAULT_CHANNELS:
         LOGGER.warning(
             "Both --channels and --channel-spec provided; preferring explicit channel list."
         )
