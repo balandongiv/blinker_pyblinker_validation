@@ -22,11 +22,12 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
+from urllib.parse import unquote, urlparse
 
 import requests
 
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
+REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_ROOT_RAW = os.environ.get("MURAT_DATASET_ROOT")
 DEFAULT_ROOT = Path(DEFAULT_ROOT_RAW) if DEFAULT_ROOT_RAW else REPO_ROOT / "data" / "murat_2018"
 DEFAULT_LIMIT_RAW = os.environ.get("MURAT_DATASET_LIMIT")
@@ -103,12 +104,35 @@ def _download_file(url: str, destination: Path) -> int:
     return total
 
 
-def _prepare_task(url: str, root: Path) -> DownloadTask | None:
-    filename = url.rstrip("/").split("/")[-1]
-    if not filename.lower().endswith(".mat"):
-        LOGGER.warning("Skipping non-MAT URL %s", url)
-        return None
+def _validate_mat_file(path: Path) -> None:
+    if not path.exists():
+        raise DownloadError(f"Downloaded file missing: {path}")
 
+    with path.open("rb") as handle:
+        header = handle.read(128)
+
+    if len(header) < 8:
+        raise DownloadError(f"Downloaded file is empty or truncated: {path}")
+
+    if not (header.startswith(b"MATLAB") or header[:4] == b"MATL"):
+        raise DownloadError(f"Downloaded file is not a MATLAB MAT-file: {path}")
+
+
+def _derive_filename(url: str) -> str:
+    parsed = urlparse(url)
+    candidate = Path(unquote(parsed.path)).name
+    if not candidate:
+        candidate = "recording"
+
+    if not candidate.lower().endswith(".mat"):
+        LOGGER.info("URL %s lacks a .mat suffix; saving as %s.mat", url, candidate)
+        candidate = f"{candidate}.mat"
+
+    return candidate
+
+
+def _prepare_task(url: str, root: Path) -> DownloadTask | None:
+    filename = _derive_filename(url)
     recording_id = Path(filename).stem
     folder = root / recording_id
     folder.mkdir(parents=True, exist_ok=True)
@@ -164,6 +188,7 @@ def download_dataset(
             attempt += 1
             try:
                 size = _download_file(task.url, task.destination)
+                _validate_mat_file(task.destination)
                 _write_metadata(task, size)
             except Exception as exc:  # noqa: BLE001 - log and retry
                 LOGGER.error(
@@ -184,7 +209,7 @@ def download_dataset(
             LOGGER.error("Giving up on %s after %s attempts", task.url, retries)
 
     if success == 0 and total == 0:
-        raise DownloadError("No downloadable .mat URLs were found in the dataset list")
+        raise DownloadError("No dataset URLs were processed from the dataset list")
     if success == 0:
         raise DownloadError("Failed to download any dataset files")
 
