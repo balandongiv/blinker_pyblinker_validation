@@ -1,82 +1,241 @@
-'''
-Download the mat,
-convert to edf
-and convert to fif
-'''
+"""Convert murat_2018 ``.mat`` recordings into FIF and EDF files."""
 
-#!/usr/bin/env python
-# ruff: noqa: E402  # allow sys.path adjustments before pyblinker imports
+from __future__ import annotations
 
-"""Compare PyBlinker detections against manual annotations from a MAT dataset.
-
-This tutorial mirrors the workflow used in
-``tutorial/blinker/1_blink_position/understand_diff_in_blink_position.py`` but
-operates on the CLA subject MAT recording that ships with this repository.
-
-The heavy lifting now lives in :mod:`pyblinker.utils.evaluation`, leaving this
-file as a beginner-friendly walkthrough that wires together the individual
-steps:
-
-1. Download the MAT EEG recording (if necessary) and load it with MNE.
-2. Run :class:`pyblinker.blinker.pyblinker.BlinkDetector` on the channels of
-   interest.
-3. Load the manual annotations stored next to the MAT file.
-4. Compare the detected vs. ground-truth blink intervals and visualise the
-   differences.
-
-Adjust :data:`TOLERANCE_SAMPLES` to change how strict the comparison is.
-
-"""
-
-
-# 1) Imports (minimal)
+import argparse
+import logging
 import os
-import sys
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Iterable, Sequence
+
+import mne
+import numpy as np
+from mne.export import export_raw
+from scipy.io import loadmat
 
 
-# 2) Basic paths and filenames (adjust these if needed)
-#    - SCRIPT_DIR: folder where this script lives
-#    - DATA_URL: where to download the MAT file if missing
-SCRIPT_DIR = Path(__file__).resolve().parent
-DATA_URL = "https://figshare.com/ndownloader/files/12400409"
+DEFAULT_ROOT = Path(os.environ.get("MURAT_DATASET_ROOT", "D:/dataset/murat_2018"))
+LOGGER = logging.getLogger(__name__)
 
-# 3) Input filenames (provided by the dataset)
-MAT_FILENAME = "CLA-SubjectJ-170510-3St-LRHand-Inter.mat"
-CSV_FILENAME = "CLA-SubjectJ-170510-3St-LRHand-Inter_annotations.csv"
 
-# 4) Full input paths (MAT EEG and its manual-annotation CSV live next to this script)
-MAT_PATH = SCRIPT_DIR / MAT_FILENAME
-CSV_PATH = SCRIPT_DIR / CSV_FILENAME
+DATA_KEYS = ("data", "signal", "eeg", "EEG")
+SFREQ_KEYS = ("srate", "fs", "sampling_rate", "rate", "sampRate")
+CHANNEL_KEYS = ("chanlabels", "labels", "channels", "chanlocs")
 
-# 5) Configuration parameters (tweak as needed)
-SAMPLING_RATE_HZ = 200.0                 # sampling rate for the loaded MAT data
-CHANNELS_TO_KEEP = ("CH1", "CH2", "CH3") # subset of channels for detection
-TOLERANCE_SAMPLES = 20                   # blink start/end alignment tolerance
-N_PREVIEW_ROWS = 10                      # how many preview rows to print in diff table
-N_DIFF_ROWS = 30                         # how many differing rows to print in diff table
-# RAW_PLOT_SCALINGS = {"eeg": 0.5}       # optional MNE scaling (example)
 
-# 6) Ensure the repository root is on sys.path (so pyblinker imports work)
-repo_root = Path(__file__).resolve().parents[1]
-if str(repo_root) not in sys.path:
-	sys.path.insert(0, str(repo_root))
+@dataclass(slots=True)
+class ConversionResult:
+    recording_id: str
+    fif_path: Path
+    edf_path: Path
 
-# 7) Import helper utilities from this repository (kept top-level for clarity)
-from pyblinker.utils.evaluation import (
-	blink_comparison,
-	blink_detection,
-	mat_data,
-	)
 
-# 8) Make sure any additional repo-specific paths are configured
-# (no additional configuration required once repo root is on sys.path)
+def _as_dict(obj) -> dict:
+    if isinstance(obj, dict):
+        return obj
+    if hasattr(obj, "_fieldnames"):
+        return {name: getattr(obj, name) for name in obj._fieldnames}
+    if hasattr(obj, "__dict__"):
+        return obj.__dict__
+    return {}
 
-# 9) Ensure the MAT file exists (download if missing), then load it with MNE
-mat_path = mat_data.ensure_mat_file(MAT_PATH, DATA_URL)
-raw_full = mat_data.load_raw_from_mat(mat_path, SAMPLING_RATE_HZ)
 
-# 10) Keep only the channels of interest
-raw = mat_data.pick_channels(raw_full, CHANNELS_TO_KEEP)
-print(f"[mne] Loaded MAT file with channels: {raw.ch_names}")
+def _try_get(container, keys: Sequence[str]):
+    mapping = _as_dict(container)
+    for key in keys:
+        if key in mapping:
+            return mapping[key]
+    return None
 
+
+def _normalise_channels(channel_data, n_channels: int) -> list[str]:
+    names: list[str] = []
+    if channel_data is None:
+        return [f"EEG{idx:03d}" for idx in range(1, n_channels + 1)]
+
+    if isinstance(channel_data, (list, tuple, np.ndarray)):
+        names = [str(item).strip() for item in np.ravel(channel_data)]
+    else:
+        names = [str(channel_data).strip()]
+
+    names = [name for name in names if name]
+    if len(names) == n_channels:
+        return names
+
+    if len(names) == 1:
+        return [f"{names[0]}_{idx:03d}" for idx in range(1, n_channels + 1)]
+
+    LOGGER.warning(
+        "Channel name count mismatch (%s vs %s); generating generic labels.",
+        len(names),
+        n_channels,
+    )
+    return [f"EEG{idx:03d}" for idx in range(1, n_channels + 1)]
+
+
+def _ensure_2d(data: np.ndarray) -> np.ndarray:
+    if data.ndim == 1:
+        return data[np.newaxis, :]
+    if data.ndim > 2:
+        raise ValueError(f"Expected 1D or 2D EEG data; got shape {data.shape}")
+    return data
+
+
+def _load_mat(mat_path: Path):
+    LOGGER.info("Loading MAT file: %s", mat_path)
+    return loadmat(mat_path, squeeze_me=True, struct_as_record=False)
+
+
+def _extract_eeg_payload(mat_content: dict):
+    payload = mat_content
+    if "EEG" in mat_content:
+        payload = _as_dict(mat_content["EEG"])
+    return payload
+
+
+def _extract_array(payload: dict):
+    data = _try_get(payload, DATA_KEYS)
+    if data is None:
+        raise KeyError(
+            "Could not locate EEG samples in MAT file. Tried keys: "
+            + ", ".join(DATA_KEYS)
+        )
+    array = np.asarray(data, dtype=float)
+    array = _ensure_2d(array)
+
+    if array.shape[0] > array.shape[1]:
+        LOGGER.info(
+            "Detected samples-first layout (shape %s); transposing to channels × samples.",
+            array.shape,
+        )
+        array = array.T
+    return array
+
+
+def _extract_sfreq(payload: dict) -> float:
+    value = _try_get(payload, SFREQ_KEYS)
+    if value is None:
+        raise KeyError(
+            "Could not determine sampling rate. Tried keys: " + ", ".join(SFREQ_KEYS)
+        )
+    sfreq = float(np.asarray(value).squeeze())
+    if not np.isfinite(sfreq) or sfreq <= 0:
+        raise ValueError(f"Invalid sampling rate extracted from MAT file: {sfreq}")
+    return sfreq
+
+
+def _extract_channel_names(payload: dict, n_channels: int) -> list[str]:
+    channel_data = _try_get(payload, CHANNEL_KEYS)
+    return _normalise_channels(channel_data, n_channels)
+
+
+def _convert_single(
+    mat_path: Path,
+    force: bool,
+    fif_path: Path,
+    edf_path: Path,
+) -> ConversionResult | None:
+    if fif_path.exists() and edf_path.exists() and not force:
+        LOGGER.info("Skipping %s (FIF & EDF already exist)", mat_path.parent.name)
+        return None
+
+    content = _load_mat(mat_path)
+    payload = _extract_eeg_payload(content)
+    data = _extract_array(payload)
+    sfreq = _extract_sfreq(payload)
+    channel_names = _extract_channel_names(payload, data.shape[0])
+
+    info = mne.create_info(ch_names=channel_names, sfreq=sfreq, ch_types="eeg")
+    raw = mne.io.RawArray(data, info)
+
+    fif_path.parent.mkdir(parents=True, exist_ok=True)
+    edf_path.parent.mkdir(parents=True, exist_ok=True)
+
+    LOGGER.info("Saving FIF → %s", fif_path)
+    raw.save(fif_path, overwrite=True)
+
+    LOGGER.info("Exporting EDF → %s", edf_path)
+    export_raw(raw, edf_path, fmt="edf", overwrite=True)
+
+    return ConversionResult(mat_path.stem, fif_path, edf_path)
+
+
+def iter_mat_files(root: Path) -> Iterable[Path]:
+    for candidate in sorted(root.glob("*/")):
+        mat_candidates = list(candidate.glob("*.mat"))
+        if not mat_candidates:
+            continue
+        yield from mat_candidates
+
+
+def convert_all(root: Path, force: bool = False) -> list[ConversionResult]:
+    if not root.exists():
+        raise FileNotFoundError(f"Dataset root does not exist: {root}")
+
+    results: list[ConversionResult] = []
+    for mat_path in iter_mat_files(root):
+        recording_id = mat_path.stem
+        fif_path = mat_path.with_name(f"{recording_id}.fif")
+        edf_path = mat_path.with_name(f"{recording_id}.edf")
+        try:
+            result = _convert_single(mat_path, force, fif_path, edf_path)
+        except Exception as exc:  # noqa: BLE001 - log and continue
+            LOGGER.error("Failed to convert %s: %s", mat_path, exc)
+            continue
+        if result is not None:
+            results.append(result)
+    return results
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--root",
+        type=Path,
+        default=DEFAULT_ROOT,
+        help="Root directory that contains per-recording subfolders.",
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Recreate FIF/EDF files even when they already exist.",
+    )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Enable debug logging output.",
+    )
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = parse_args(argv)
+    logging.basicConfig(
+        level=logging.DEBUG if args.verbose else logging.INFO,
+        format="%(asctime)s %(levelname)s %(message)s",
+    )
+
+    try:
+        results = convert_all(args.root, force=args.force)
+    except Exception as exc:  # noqa: BLE001 - surface the error for CLI
+        LOGGER.error("Conversion failed: %s", exc)
+        return 1
+
+    if not results:
+        LOGGER.warning("No MAT files were converted.")
+    else:
+        LOGGER.info("Converted %s recording(s)", len(results))
+        for result in results:
+            LOGGER.debug(
+                "Recording %s → FIF: %s | EDF: %s",
+                result.recording_id,
+                result.fif_path,
+                result.edf_path,
+            )
+
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
