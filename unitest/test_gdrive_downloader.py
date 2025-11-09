@@ -2,10 +2,19 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from unittest import TestCase
 
+import pytest
+
 from src.helper import download_test_files
+
+if os.environ.get("HTTP_PROXY") or os.environ.get("HTTPS_PROXY"):
+    pytest.skip(
+        "Google Drive download tests require direct internet access.",
+        allow_module_level=True,
+    )
 
 REQUIRED_DATASET_ENTRIES = [
     Path("eog_eeg_data") / "S1" / "S1.fif",

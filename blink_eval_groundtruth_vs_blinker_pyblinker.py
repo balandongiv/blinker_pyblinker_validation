@@ -213,11 +213,13 @@ def coerce_intervals_from_obj(
             start_keys = ["start", "start_idx", "start_sample", "blink_start", "s_idx", "start_frame", "start_time"]
             end_keys   = ["end", "end_idx", "end_sample", "blink_end", "e_idx", "end_frame", "end_time"]
             for d in obj:
-                if not isinstance(d, dict): continue
+                if not isinstance(d, dict):
+                    continue
                 s_val = next((d[k] for k in start_keys if k in d), None)
                 e_val = next((d[k] for k in end_keys if k in d), None)
                 if s_val is None and "center" in d and ("duration" in d or "width" in d):
-                    c = float(d["center"]); dur = float(d.get("duration", d.get("width", 0.0)))
+                    c = float(d["center"])
+                    dur = float(d.get("duration", d.get("width", 0.0)))
                     s_val, e_val = c - dur/2, c + dur/2
                 if s_val is not None and e_val is not None:
                     intervals.extend(_to_raw_indices([s_val], [e_val], units, raw_sfreq, raw_n, detector_fs))
@@ -303,7 +305,8 @@ def prf(conf: Dict[str, int]) -> Dict[str, float]:
 # Event-level matching (start/end aware)
 # -------------------------------------------------------------------
 def iou(a: Tuple[int, int], b: Tuple[int, int]) -> float:
-    s1, e1 = a; s2, e2 = b
+    s1, e1 = a
+    s2, e2 = b
     inter = max(0, min(e1, e2) - max(s1, s2))
     union = max(e1, e2) - min(s1, s2)
     return inter / union if union > 0 else 0.0
@@ -324,14 +327,17 @@ def greedy_match(
             if g_idx in used_gt:
                 continue
             j = iou(p, g)
-            s_err = abs(p[0] - g[0]); e_err = abs(p[1] - g[1])
+            s_err = abs(p[0] - g[0])
+            e_err = abs(p[1] - g[1])
             prox_ok = (s_err <= start_tol_samps) and (e_err <= end_tol_samps)
             score = max(j, 1.0 if prox_ok else 0.0)
             if score > best[1]:
                 best = (g_idx, score)
         if best[0] >= 0:
-            g_idx = best[0]; g = gts[g_idx]
-            s_err = p[0] - g[0]; e_err = p[1] - g[1]
+            g_idx = best[0]
+            g = gts[g_idx]
+            s_err = p[0] - g[0]
+            e_err = p[1] - g[1]
             if (iou(p, g) >= min_iou) or (abs(s_err) <= start_tol_samps and abs(e_err) <= end_tol_samps):
                 matches.append((p_idx, g_idx, s_err, e_err))
                 used_gt.add(g_idx)
@@ -351,7 +357,9 @@ def event_metrics(
     matches, unpaired_pred, unpaired_gt = greedy_match(
         preds, gts, min_iou=min_iou, start_tol_samps=start_tol_samps, end_tol_samps=end_tol_samps
     )
-    tp = len(matches); fp = len(unpaired_pred); fn = len(unpaired_gt)
+    tp = len(matches)
+    fp = len(unpaired_pred)
+    fn = len(unpaired_gt)
     precision = tp / (tp + fp) if (tp + fp) else 0.0
     recall    = tp / (tp + fn) if (tp + fn) else 0.0
     f1        = (2*precision*recall / (precision + recall)) if (precision + recall) else 0.0
