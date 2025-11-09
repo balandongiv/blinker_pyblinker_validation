@@ -210,6 +210,43 @@ def _compute_onset_mae(
     sampling_rate_hz: float | None,
     tolerance_samples: int,
 ) -> float | None:
+    r"""Return the mean absolute onset timing error for matched blink events.
+
+    The alignments produced by ``blink_comparison.compute_alignments_and_metrics``
+    capture the difference between each detected blink onset and its closest
+    ground-truth counterpart in sample units.  The *mean absolute error (MAE)* is
+    the arithmetic mean of the absolute onset differences expressed in seconds.
+
+    MAE is a widely used regression metric defined as
+
+    .. math:: \text{MAE} = \frac{1}{N} \sum_{i=1}^{N} |y_i - \hat{y}_i|,
+
+    where ``y_i`` is the reference value (blinker onset) and ``\hat{y}_i`` is the
+    predicted value (pyblinker onset).  In this context it quantifies the
+    average temporal deviation between the two pipelines: lower values indicate
+    that detections are, on average, closer to the reference events, while higher
+    values point to greater onset disagreement.  Only alignments that qualify as
+    a match within ``tolerance_samples`` contribute to the MAE; mismatched pairs
+    are excluded to avoid inflating the error with unrelated events.
+
+    Parameters
+    ----------
+    alignments:
+        Iterable of alignment objects returned by the comparison helpers.
+    sampling_rate_hz:
+        Sampling frequency used to convert sample offsets into seconds.  If the
+        sampling rate is unknown the MAE cannot be computed and ``None`` is
+        returned.
+    tolerance_samples:
+        Maximum onset difference (in samples) for an alignment to be treated as
+        a valid match.
+
+    Returns
+    -------
+    float | None
+        The mean absolute onset error in seconds for matched pairs, or ``None``
+        when the sampling rate is missing or there are no qualifying alignments.
+    """
     if sampling_rate_hz is None or not alignments:
         return None
 
@@ -340,7 +377,65 @@ def _build_summary_frame(comparisons: Sequence[RecordingComparison]) -> pd.DataF
     return summary
 
 
-def _render_report(summary: pd.DataFrame, output_dir: Path) -> Path:
+def _build_overall_summary(summary: pd.DataFrame) -> pd.Series:
+    """Aggregate per-recording metrics into a global ""ultimate" summary."""
+    if summary.empty:
+        return pd.Series(dtype=float)
+
+    matched_total = summary["matched"].sum(skipna=True)
+    py_only_total = summary["py_only"].sum(skipna=True)
+    blinker_only_total = summary["blinker_only"].sum(skipna=True)
+
+    precision_micro = (
+        matched_total / (matched_total + py_only_total)
+        if (matched_total + py_only_total) > 0
+        else math.nan
+    )
+    recall_micro = (
+        matched_total / (matched_total + blinker_only_total)
+        if (matched_total + blinker_only_total) > 0
+        else math.nan
+    )
+    if (
+        math.isnan(precision_micro)
+        or math.isnan(recall_micro)
+        or (precision_micro + recall_micro) == 0
+    ):
+        f1_micro = math.nan
+    else:
+        f1_micro = 2 * precision_micro * recall_micro / (precision_micro + recall_micro)
+
+    mae_values = summary["onset_mae_sec"].dropna()
+    mae_mean = mae_values.mean() if not mae_values.empty else math.nan
+
+    return pd.Series(
+        {
+            "recording_count": len(summary),
+            "py_count_total": summary["py_count"].sum(skipna=True),
+            "blinker_count_total": summary["blinker_count"].sum(skipna=True),
+            "matched_total": matched_total,
+            "py_only_total": py_only_total,
+            "blinker_only_total": blinker_only_total,
+            "pairs_outside_tolerance_total": summary[
+                "pairs_outside_tolerance"
+            ].sum(skipna=True),
+            "precision_macro": summary["precision"].mean(skipna=True),
+            "recall_macro": summary["recall"].mean(skipna=True),
+            "f1_macro": summary["f1"].mean(skipna=True),
+            "precision_micro": precision_micro,
+            "recall_micro": recall_micro,
+            "f1_micro": f1_micro,
+            "onset_mae_sec_mean": mae_mean,
+        }
+    )
+
+
+def _render_report(
+    summary: pd.DataFrame,
+    output_dir: Path,
+    *,
+    overall: pd.Series | None = None,
+) -> Path:
     lines = ["# murat_2018 PyBlinker vs Blinker comparison", ""]
     lines.append("| Recording | PyBlinker | Blinker | Matched | Py-only | Blinker-only | Precision | Recall | F1 | MAE (s) |")
     lines.append("| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |")
@@ -367,6 +462,19 @@ def _render_report(summary: pd.DataFrame, output_dir: Path) -> Path:
                 mae=_fmt(row["onset_mae_sec"]),
             )
         )
+
+    if overall is not None and not overall.empty:
+        lines.extend(["", "## Overall summary", "", "| Metric | Value |", "| --- | ---: |"])
+
+        def _fmt_overall(value: float) -> str:
+            if pd.isna(value):
+                return "-"
+            if isinstance(value, float):
+                return f"{value:.3f}"
+            return str(value)
+
+        for metric, value in overall.items():
+            lines.append(f"| {metric} | {_fmt_overall(value)} |")
 
     report_path = output_dir / "summary_report.md"
     report_path.write_text("\n".join(lines), encoding="utf8")
@@ -413,9 +521,23 @@ def main(argv: list[str] | None = None) -> int:
     summary = _build_summary_frame(comparisons)
     summary_path = output_dir / "summary_metrics.csv"
     summary.to_csv(summary_path, index=False)
-    report_path = _render_report(summary, output_dir)
+
+    overall = _build_overall_summary(summary)
+    overall_path = None
+    if not overall.empty:
+        overall_path = output_dir / "summary_metrics_overall.csv"
+        overall_frame = (
+            overall.to_frame(name="value")
+            .reset_index()
+            .rename(columns={"index": "metric"})
+        )
+        overall_frame.to_csv(overall_path, index=False)
+
+    report_path = _render_report(summary, output_dir, overall=overall)
 
     LOGGER.info("Summary metrics saved to %s", summary_path)
+    if overall_path:
+        LOGGER.info("Overall summary saved to %s", overall_path)
     LOGGER.info("Summary report saved to %s", report_path)
     return 0
 
