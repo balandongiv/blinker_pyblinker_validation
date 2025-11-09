@@ -14,22 +14,18 @@ from typing import Dict, Iterable
 import numpy as np
 import pandas as pd
 
-
-try:  # pragma: no cover - import is platform dependent
-    import matlab.engine
-except ImportError as exc:  # pragma: no cover - handled at runtime
-    matlab = None
-    MATLAB_IMPORT_ERROR = exc
-else:  # pragma: no cover - executed when MATLAB engine is available
-    matlab = matlab.engine
-    MATLAB_IMPORT_ERROR = None
+from src.matlab_runner.execute_blinker import (
+    BLINKER_KEYS,
+    DEFAULT_PROJECT_ROOT,
+    run_blinker as matlab_run_blinker,
+    start_matlab as matlab_start_matlab,
+)
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_ROOT_RAW = os.environ.get("MURAT_DATASET_ROOT")
 DEFAULT_ROOT = Path(DEFAULT_ROOT_RAW) if DEFAULT_ROOT_RAW else REPO_ROOT / "data" / "murat_2018"
 DEFAULT_EEGLAB_ROOT = Path(r"D:\code development\matlab_plugin\eeglab2025.1.0")
-BLINKER_KEYS = ("blinks", "blinkFits", "blinkProps", "blinkStats", "params")
 LOGGER = logging.getLogger(__name__)
 
 
@@ -37,23 +33,11 @@ LOGGER = logging.getLogger(__name__)
 class BlinkerRunConfig:
     eeglab_root: Path = DEFAULT_EEGLAB_ROOT
     blinker_plugin: str = "Blinker1.2.0"
+    project_root: Path = DEFAULT_PROJECT_ROOT
 
 
 def discover_edf_files(root: Path) -> Iterable[Path]:
     yield from sorted(root.rglob("*.edf"))
-
-
-def _to_dataframe(value) -> pd.DataFrame:
-    if isinstance(value, pd.DataFrame):
-        return value
-    if isinstance(value, dict):
-        return pd.DataFrame(value)
-    if hasattr(value, "keys") and hasattr(value, "__getitem__"):
-        data = {key: np.array(value[key]).squeeze().tolist() for key in value.keys()}
-        return pd.DataFrame(data)
-    if isinstance(value, (list, tuple)):
-        return pd.DataFrame(value)
-    return pd.DataFrame()
 
 
 def _prepare_frame(frame: pd.DataFrame) -> pd.DataFrame:
@@ -64,27 +48,12 @@ def _prepare_frame(frame: pd.DataFrame) -> pd.DataFrame:
     )
 
 
-def _start_engine(cfg: BlinkerRunConfig):  # pragma: no cover - requires MATLAB
-    if matlab is None:
-        raise RuntimeError(
-            "MATLAB engine for Python is not available."
-        ) from MATLAB_IMPORT_ERROR
-
-    eng = matlab.start_matlab("-nojvm -nosplash -nodesktop")
-    eng.addpath(eng.genpath(str(cfg.eeglab_root)), nargout=0)
-    eng.addpath(
-        eng.genpath(str(Path(cfg.eeglab_root) / "plugins" / cfg.blinker_plugin)),
-        nargout=0,
-    )
-    return eng
-
-
 def run_blinker(eng, edf_path: Path) -> Dict[str, pd.DataFrame]:  # pragma: no cover
-    output = eng.run_blinker_pipeline_wrap(str(edf_path), nargout=1)
     frames: Dict[str, pd.DataFrame] = {}
+    output = matlab_run_blinker(eng, edf_path)
     for key in BLINKER_KEYS:
         try:
-            frames[key] = _prepare_frame(_to_dataframe(output[key]))
+            frames[key] = _prepare_frame(output.get(key, pd.DataFrame()))
         except Exception as exc:  # noqa: BLE001
             LOGGER.error("Failed to serialise MATLAB output %s for %s: %s", key, edf_path, exc)
             frames[key] = pd.DataFrame()
@@ -145,6 +114,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default="Blinker1.2.0",
         help="Name of the Blinker plugin folder inside EEGLAB's plugins directory.",
     )
+    parser.add_argument(
+        "--project-root",
+        type=Path,
+        default=DEFAULT_PROJECT_ROOT,
+        help="Path containing MATLAB helpers to add to the MATLAB path.",
+    )
     parser.add_argument("--force", action="store_true", help="Overwrite existing results.")
     parser.add_argument(
         "--verbose",
@@ -166,11 +141,19 @@ def main(argv: list[str] | None = None) -> int:
         LOGGER.warning("No EDF files were found below %s", args.root)
         return 0
 
-    cfg = BlinkerRunConfig(eeglab_root=args.eeglab_root, blinker_plugin=args.blinker_plugin)
+    cfg = BlinkerRunConfig(
+        eeglab_root=args.eeglab_root,
+        blinker_plugin=args.blinker_plugin,
+        project_root=args.project_root,
+    )
 
     processed = 0
     try:
-        eng = _start_engine(cfg)
+        eng = matlab_start_matlab(
+            cfg.eeglab_root,
+            project_root=cfg.project_root,
+            blinker_plugin=cfg.blinker_plugin,
+        )
     except Exception as exc:  # noqa: BLE001
         LOGGER.error("Unable to start MATLAB engine: %s", exc)
         return 1
