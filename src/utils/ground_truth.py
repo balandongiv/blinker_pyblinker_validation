@@ -206,38 +206,26 @@ def discover_recording_tasks(
 
     for candidate_dir, candidate_id in zip(candidates, candidate_ids):
         if not candidate_dir.exists():
-            LOGGER.warning("Skipping %s because it does not exist", candidate_dir)
+            LOGGER.warning("[skip] %s does not exist", candidate_dir)
             continue
         if not candidate_dir.is_dir():
-            LOGGER.warning("Skipping %s because it is not a directory", candidate_dir)
+            LOGGER.warning("[skip] %s is not a directory", candidate_dir)
             continue
 
         fif_path = infer_fif_path(candidate_dir, candidate_id)
         if not fif_path.exists():
-            LOGGER.warning(
-                "Skipping %s because no FIF file was found (expected %s)",
-                candidate_dir,
-                fif_path,
-            )
+            LOGGER.warning("[skip] %s missing FIF file (expected %s)", candidate_dir, fif_path)
             continue
         recording_id = fif_path.stem
 
         py_path = infer_py_path(candidate_dir, recording_id)
         if not py_path.exists():
-            LOGGER.warning(
-                "Skipping %s because PyBlinker outputs are missing (expected %s)",
-                candidate_dir,
-                py_path,
-            )
+            LOGGER.warning("[skip] %s missing PyBlinker outputs (expected %s)", candidate_dir, py_path)
             continue
 
         blinker_path = infer_blinker_path(candidate_dir, recording_id)
         if not blinker_path.exists():
-            LOGGER.warning(
-                "Skipping %s because MATLAB Blinker outputs are missing (expected %s)",
-                candidate_dir,
-                blinker_path,
-            )
+            LOGGER.warning("[skip] %s missing MATLAB Blinker outputs (expected %s)", candidate_dir, blinker_path)
             continue
 
         task = RecordingTask(
@@ -249,7 +237,11 @@ def discover_recording_tasks(
         )
 
         if not include_inspected and task.inspected_path.exists():
-            LOGGER.info("Skipping %s because %s already exists", recording_id, task.inspected_path)
+            LOGGER.info(
+                "[skip] %s already inspected (found %s)",
+                recording_id,
+                task.inspected_path,
+            )
             continue
 
         yield task
@@ -399,6 +391,9 @@ def main(argv: Iterable[str] | None = None) -> int:
             raise SystemExit(
                 "Explicit file overrides only support processing a single recording"
             )
+        LOGGER.info(
+            "[focus] Using explicit file overrides for %s", args.fif_path
+        )
         tasks = [
             task_from_explicit_paths(args.py_path, args.blinker_path, args.fif_path)
         ]
@@ -406,6 +401,21 @@ def main(argv: Iterable[str] | None = None) -> int:
         root = args.root
         if not root.exists():
             raise SystemExit(f"Dataset root does not exist: {root}")
+        if args.recording_ids:
+            LOGGER.info(
+                "[focus] Limiting processing to recording IDs: %s",
+                ", ".join(args.recording_ids),
+            )
+        elif not args.include_inspected:
+            LOGGER.info(
+                "[focus] Batch processing all recordings under %s (skipping inspected)",
+                root,
+            )
+        else:
+            LOGGER.info(
+                "[focus] Batch processing all recordings under %s (including inspected)",
+                root,
+            )
         tasks = list(
             discover_recording_tasks(
                 root=root,
@@ -416,6 +426,7 @@ def main(argv: Iterable[str] | None = None) -> int:
         if not tasks:
             LOGGER.info("No recordings matched the provided criteria; exiting")
             return 0
+        LOGGER.info("Discovered %s recording(s) to process", len(tasks))
 
     try:
         process_all(tasks, tolerance_samples=args.tolerance_samples, plot=plot)
