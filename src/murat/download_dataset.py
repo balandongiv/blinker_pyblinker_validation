@@ -26,13 +26,19 @@ from urllib.parse import unquote, urlparse
 
 import requests
 
+from src.utils.config_utils import (
+    DEFAULT_CONFIG_PATH,
+    get_path_setting,
+    load_config,
+)
+
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_ROOT_RAW = os.environ.get("MURAT_DATASET_ROOT")
-DEFAULT_ROOT = Path(DEFAULT_ROOT_RAW) if DEFAULT_ROOT_RAW else REPO_ROOT / "data" / "murat_2018"
+CONFIG = load_config(DEFAULT_CONFIG_PATH)
+DEFAULT_ROOT = get_path_setting(CONFIG, "download_root", env_var="MURAT_DATASET_ROOT")
 DEFAULT_LIMIT_RAW = os.environ.get("MURAT_DATASET_LIMIT")
 DEFAULT_LIMIT = int(DEFAULT_LIMIT_RAW) if DEFAULT_LIMIT_RAW is not None else 3
-DEFAULT_DATASET_FILE = REPO_ROOT / "murat_2018_dataset.txt"
+DEFAULT_DATASET_FILE = get_path_setting(CONFIG, "dataset_file")
 
 LOGGER = logging.getLogger(__name__)
 

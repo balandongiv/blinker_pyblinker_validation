@@ -54,7 +54,7 @@ if str(repo_root) not in sys.path:
     sys.path.insert(0, str(repo_root))
 
 # 7) Import helper utilities from this repository (kept top-level for clarity)
-from pyblinker.utils.evaluation import (
+from pyblinker.utils.evaluation import (  # noqa: E402 - ensure repo path is configured first
     blink_comparison,
     blink_detection,
     mat_data,

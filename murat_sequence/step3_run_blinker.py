@@ -5,13 +5,11 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import os
 import pickle
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterable
 
-import numpy as np
 import pandas as pd
 
 from src.matlab_runner.execute_blinker import (
@@ -20,19 +18,26 @@ from src.matlab_runner.execute_blinker import (
     run_blinker as matlab_run_blinker,
     start_matlab as matlab_start_matlab,
 )
+from src.utils.blink_events import prepare_blinker_frame
+from src.utils.config_utils import (
+    DEFAULT_CONFIG_PATH,
+    get_default_blinker_plugin,
+    get_path_setting,
+    load_config,
+)
 
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_ROOT_RAW = os.environ.get("MURAT_DATASET_ROOT")
-DEFAULT_ROOT = Path(DEFAULT_ROOT_RAW) if DEFAULT_ROOT_RAW else REPO_ROOT / "data" / "murat_2018"
-DEFAULT_EEGLAB_ROOT = Path(r"D:\code development\matlab_plugin\eeglab2025.1.0")
+CONFIG = load_config(DEFAULT_CONFIG_PATH)
+DEFAULT_ROOT = get_path_setting(CONFIG, "raw_downsampled", env_var="MURAT_DATASET_ROOT")
+DEFAULT_EEGLAB_ROOT = get_path_setting(CONFIG, "eeglab_root", env_var="EEGLAB_ROOT")
+DEFAULT_BLINKER_PLUGIN = get_default_blinker_plugin(CONFIG) or "Blinker1.2.0"
 LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
 class BlinkerRunConfig:
     eeglab_root: Path = DEFAULT_EEGLAB_ROOT
-    blinker_plugin: str = "Blinker1.2.0"
+    blinker_plugin: str = DEFAULT_BLINKER_PLUGIN
     project_root: Path = DEFAULT_PROJECT_ROOT
 
 
@@ -40,20 +45,12 @@ def discover_edf_files(root: Path) -> Iterable[Path]:
     yield from sorted(root.rglob("*.edf"))
 
 
-def _prepare_frame(frame: pd.DataFrame) -> pd.DataFrame:
-    if frame.empty:
-        return frame
-    return frame.applymap(
-        lambda x: x.tolist() if isinstance(x, np.ndarray) else x
-    )
-
-
 def run_blinker(eng, edf_path: Path) -> Dict[str, pd.DataFrame]:  # pragma: no cover
     frames: Dict[str, pd.DataFrame] = {}
     output = matlab_run_blinker(eng, edf_path)
     for key in BLINKER_KEYS:
         try:
-            frames[key] = _prepare_frame(output.get(key, pd.DataFrame()))
+            frames[key] = prepare_blinker_frame(output.get(key, pd.DataFrame()))
         except Exception as exc:  # noqa: BLE001
             LOGGER.error("Failed to serialise MATLAB output %s for %s: %s", key, edf_path, exc)
             frames[key] = pd.DataFrame()
@@ -111,7 +108,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--blinker-plugin",
         type=str,
-        default="Blinker1.2.0",
+        default=DEFAULT_BLINKER_PLUGIN,
         help="Name of the Blinker plugin folder inside EEGLAB's plugins directory.",
     )
     parser.add_argument(

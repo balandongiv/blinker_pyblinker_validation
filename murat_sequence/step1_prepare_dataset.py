@@ -4,14 +4,9 @@ from __future__ import annotations
 
 import argparse
 import logging
-import os
 import sys
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Sequence
-
-import mne
-from mne.export import export_raw
 
 # Ensure the repository root (which contains the ``src`` package) is importable when
 # this script is executed directly via ``python murat_sequence/step1_prepare_dataset``.
@@ -19,95 +14,35 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from pyblinker.utils.evaluation import mat_data  # noqa: E402 - add repo path first
-
 from src.murat.download_dataset import (  # noqa: E402 - deferred import for path setup
     DEFAULT_LIMIT,
-    DEFAULT_ROOT as DOWNLOAD_DEFAULT_ROOT,
     DownloadError,
     download_dataset,
 )
+from src.utils.config_utils import (  # noqa: E402 - deferred import for path setup
+    DEFAULT_CONFIG_PATH,
+    get_default_channels,
+    get_default_sampling_rate,
+    get_path_setting,
+    load_config,
+)
+from src.utils.murat_dataset import (  # noqa: E402 - deferred import for path setup
+    ConversionResult,
+    convert_recording,
+    parse_channel_argument,
+    resolve_dataset_file,
+)
 
 
-DEFAULT_DATASET_FILE = r"C:\Users\balan\IdeaProjects\blinker_pyblinker_validation\config\murat_2018_dataset.txt"
-DEFAULT_ROOT = Path(os.environ.get("MURAT_DATASET_ROOT", str(DOWNLOAD_DEFAULT_ROOT)))
-DEFAULT_SAMPLING_RATE = 200.0
-DEFAULT_CHANNELS: Sequence[str] | None = ("CH1", "CH2")
+CONFIG = load_config(DEFAULT_CONFIG_PATH)
+DEFAULT_DATASET_FILE = get_path_setting(CONFIG, "dataset_file")
+DEFAULT_ROOT = get_path_setting(CONFIG, "download_root", env_var="MURAT_DATASET_ROOT")
+DEFAULT_SAMPLING_RATE = (
+    get_default_sampling_rate(CONFIG)
+    or 200.0
+)
+DEFAULT_CHANNELS: Sequence[str] | None = get_default_channels(CONFIG) or ("CH1", "CH2")
 LOGGER = logging.getLogger(__name__)
-
-
-@dataclass(slots=True)
-class ConversionResult:
-    recording_id: str
-    fif_path: Path
-    edf_path: Path
-
-
-def _resolve_dataset_file(default: str) -> Path:
-    """Resolve the dataset list relative to this script."""
-
-    script_dir = Path(__file__).resolve().parent
-    return (script_dir / default).resolve()
-
-
-def _parse_channel_argument(arg: str | Sequence[str] | None) -> Sequence[str] | None:
-    """Interpret the channel selection argument."""
-
-    if arg is None:
-        return None
-    if isinstance(arg, str):
-        if not arg.strip():
-            return None
-        if any(sep in arg for sep in {",", "-"}):
-            return mat_data.parse_channel_spec(arg)
-        return [part.strip() for part in arg.split() if part.strip()]
-    return arg
-
-
-def _create_raw(
-    mat_path: Path,
-    sampling_rate: float | None,
-    channels: Sequence[str] | None,
-) -> mne.io.BaseRaw:
-    """Load an MNE ``Raw`` instance using the helper utilities shipped with pyblinker."""
-
-    LOGGER.info("Loading MAT file via pyblinker helpers: %s", mat_path)
-    raw = mat_data.load_raw_from_mat(mat_path, sfreq=sampling_rate)
-    if channels:
-        LOGGER.debug("Selecting channels: %s", ", ".join(channels))
-        raw = mat_data.pick_channels(raw, channels)
-    return raw
-
-
-def _convert_recording(
-    mat_path: Path,
-    force: bool,
-    fif_path: Path,
-    edf_path: Path,
-    sampling_rate: float | None,
-    channels: Sequence[str] | None,
-) -> ConversionResult | None:
-    if fif_path.exists() and edf_path.exists() and not force:
-        LOGGER.info("Skipping %s (FIF & EDF already exist)", mat_path.parent.name)
-        return None
-
-    raw = _create_raw(mat_path, sampling_rate, channels)
-
-    fif_path.parent.mkdir(parents=True, exist_ok=True)
-    edf_path.parent.mkdir(parents=True, exist_ok=True)
-
-    LOGGER.info("Saving FIF → %s", fif_path)
-    raw.save(fif_path, overwrite=True)
-
-    LOGGER.info("Exporting EDF → %s", edf_path)
-    export_raw(
-        fname=str(edf_path),
-        raw=raw,
-        fmt="edf",
-        overwrite=True,
-    )
-
-    return ConversionResult(mat_path.stem, fif_path, edf_path)
 
 
 def iter_mat_files(root: Path) -> Iterable[Path]:
@@ -133,7 +68,7 @@ def convert_all(
         fif_path = mat_path.with_name(f"{recording_id}.fif")
         edf_path = mat_path.with_name(f"{recording_id}.edf")
         try:
-            result = _convert_recording(
+            result = convert_recording(
                 mat_path,
                 force,
                 fif_path,
@@ -230,10 +165,13 @@ def main(argv: list[str] | None = None) -> int:
             "Both --channels and --channel-spec provided; preferring explicit channel list."
         )
     channel_arg = args.channels if args.channels else args.channel_spec
-    channels = _parse_channel_argument(channel_arg)
+    channels = parse_channel_argument(channel_arg)
 
     if not args.skip_download:
-        dataset_file = args.dataset_file or _resolve_dataset_file(DEFAULT_DATASET_FILE)
+        dataset_file = args.dataset_file or resolve_dataset_file(
+            DEFAULT_DATASET_FILE,
+            reference_dir=Path(__file__).resolve().parent,
+        )
         try:
             download_dataset(
                 dataset_file=dataset_file,

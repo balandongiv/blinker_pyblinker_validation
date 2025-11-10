@@ -5,20 +5,24 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import os
 import pickle
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
 import mne
-import pandas as pd
 from pyblinker.blinker.pyblinker import BlinkDetector
 
+from src.utils.config_utils import (
+    DEFAULT_CONFIG_PATH,
+    get_path_setting,
+    load_config,
+)
+from src.utils.blink_events import serialise_events
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_ROOT_RAW = os.environ.get("MURAT_DATASET_ROOT")
-DEFAULT_ROOT = Path(DEFAULT_ROOT_RAW) if DEFAULT_ROOT_RAW else REPO_ROOT / "data" / "murat_2018"
+
+CONFIG = load_config(DEFAULT_CONFIG_PATH)
+DEFAULT_ROOT = get_path_setting(CONFIG, "raw_downsampled", env_var="MURAT_DATASET_ROOT")
 LOGGER = logging.getLogger(__name__)
 
 
@@ -33,43 +37,6 @@ class PyBlinkerParams:
 
 def discover_fif_files(root: Path) -> Iterable[Path]:
     yield from sorted(root.rglob("*.fif"))
-
-
-def _serialise_events(raw_events) -> pd.DataFrame:
-    if isinstance(raw_events, pd.DataFrame):
-        frame = raw_events.copy()
-    else:
-        frame = pd.DataFrame(raw_events)
-    if frame.empty:
-        frame["onset_sec"] = []
-        frame["duration_sec"] = []
-        return frame
-
-    columns = {col.lower(): col for col in frame.columns}
-    onset_col = None
-    for candidate in ("onset", "start", "blink_start", "latency", "time"):
-        if candidate in columns:
-            onset_col = columns[candidate]
-            break
-    duration_col = None
-    for candidate in ("duration", "blink_duration", "len", "length"):
-        if candidate in columns:
-            duration_col = columns[candidate]
-            break
-
-    if onset_col is not None:
-        frame["onset_sec"] = pd.to_numeric(frame[onset_col], errors="coerce")
-    elif "sample" in columns:
-        frame["onset_sec"] = pd.to_numeric(frame[columns["sample"]], errors="coerce")
-    else:
-        frame["onset_sec"] = pd.NA
-
-    if duration_col is not None:
-        frame["duration_sec"] = pd.to_numeric(frame[duration_col], errors="coerce")
-    elif "duration_sec" not in frame.columns:
-        frame["duration_sec"] = pd.NA
-
-    return frame
 
 
 def run_pyblinker(
@@ -98,7 +65,7 @@ def run_pyblinker(
     )
     annot, channel, n_good, blink_details, _fig_data, selected_channel = detector.get_blink()
 
-    events = _serialise_events(blink_details)
+    events = serialise_events(blink_details)
     metrics = {
         "n_good_blinks": int(n_good),
         "selected_channel": selected_channel,

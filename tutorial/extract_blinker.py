@@ -7,10 +7,14 @@ import os
 from pathlib import Path
 
 from src.matlab_runner import convert_fif_to_edf, execute_blinker
-from src.utils.config_utils import get_dataset_root, load_config
+from src.utils.config_utils import (
+    DEFAULT_CONFIG_PATH,
+    get_default_blinker_plugin,
+    get_path_setting,
+    load_config,
+)
 
-CONFIG_PATH = Path("../config/config.yaml")
-DEFAULT_EEGLAB_ROOT = Path(r"D:\code development\matlab_plugin\eeglab2025.1.0")
+CONFIG_PATH = Path("../config/config.yaml") if Path("../config/config.yaml").exists() else DEFAULT_CONFIG_PATH
 
 
 def main() -> None:
@@ -18,7 +22,7 @@ def main() -> None:
 
     logging.info("Loading configuration from %s", CONFIG_PATH)
     config = load_config(CONFIG_PATH)
-    dataset_root = get_dataset_root(config)
+    dataset_root = get_path_setting(config, "raw_downsampled")
     logging.info("Dataset root resolved to %s", dataset_root)
 
     logging.info("Starting FIF -> EDF conversion")
@@ -33,7 +37,7 @@ def main() -> None:
         eeglab_root = Path(eeglab_root_env)
         logging.info("Using EEGLAB_ROOT from environment: %s", eeglab_root)
     else:
-        eeglab_root = DEFAULT_EEGLAB_ROOT
+        eeglab_root = get_path_setting(config, "eeglab_root")
         logging.info(
             "EEGLAB_ROOT environment variable not set. Falling back to default path: %s",
             eeglab_root,
@@ -44,7 +48,7 @@ def main() -> None:
         dataset_root=dataset_root,
         eeglab_root=eeglab_root,
         project_root=execute_blinker.DEFAULT_PROJECT_ROOT,
-        blinker_plugin="Blinker1.2.0",
+        blinker_plugin=get_default_blinker_plugin(config) or "Blinker1.2.0",
         overwrite=True,
     )
     logging.info("Blinker finished for %s EDF files", processed)
