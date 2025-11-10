@@ -1,12 +1,13 @@
 """End-to-end runner for the Murat 2018 processing pipeline.
 
-This script orchestrates the four individual workflow steps provided in this
+This script orchestrates the five individual workflow steps provided in this
 repository:
 
 1. :mod:`murat_sequence.step1_prepare_dataset`
 2. :mod:`murat_sequence.step2_pyblinker`
 3. :mod:`murat_sequence.step3_run_blinker`
 4. :mod:`murat_sequence.step4_compare_`
+5. :mod:`murat_sequence.step5_create_ground_truth`
 
 The workflow uses ``D:/dataset/murat_2018`` as the canonical storage location
 for both the downloaded dataset and any derived outputs (FIF/EDF files,
@@ -26,6 +27,7 @@ import logging
 import os
 import sys
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 
 # Configure the shared dataset location *before* importing any of the step
@@ -39,6 +41,7 @@ from murat_sequence import (  # noqa: E402 - import depends on env var above
     step2_pyblinker,
     step3_run_blinker,
     step4_compare_,
+    step5_create_ground_truth,
 )
 
 LOGGER = logging.getLogger(__name__)
@@ -65,38 +68,102 @@ def _run_step(name: str, argv: Sequence[str], runner: Callable[[list[str] | None
     LOGGER.info("%s completed successfully", name)
 
 
-def run_workflow(*, force_step2: bool = False, force_step3: bool = False) -> None:
-    """Run the Murat 2018 end-to-end processing workflow."""
+@dataclass
+class WorkflowOptions:
+    """Runtime configuration shared by all workflow stages."""
 
-    _ensure_root_exists(DATASET_ROOT)
+    dataset_root: Path
+    force_step2: bool = False
+    force_step3: bool = False
 
-    # Step 1 – Download/conversion (limit to CH1/CH2 like the standalone script).
-    step1_args = [
+
+@dataclass
+class WorkflowStage:
+    """Description of an individual workflow stage."""
+
+    name: str
+    runner: Callable[[list[str] | None], int]
+    build_args: Callable[[WorkflowOptions], Sequence[str]]
+    enabled: bool = True
+
+
+def _stage1_args(options: WorkflowOptions) -> list[str]:
+    return [
         "--root",
-        str(DATASET_ROOT),
+        str(options.dataset_root),
         "--channels",
         "CH1",
         "CH2",
         "--limit",
         "-1",
     ]
-    _run_step("step1_prepare_dataset", step1_args, step1_prepare_dataset.main)
 
-    # Step 2 – Execute PyBlinker.
-    step2_args = ["--root", str(DATASET_ROOT)]
-    if force_step2:
-        step2_args.append("--force")
-    _run_step("step2_pyblinker", step2_args, step2_pyblinker.main)
 
-    # Step 3 – Execute MATLAB Blinker.
-    step3_args = ["--root", str(DATASET_ROOT)]
-    if force_step3:
-        step3_args.append("--force")
-    _run_step("step3_run_blinker", step3_args, step3_run_blinker.main)
+def _stage2_args(options: WorkflowOptions) -> list[str]:
+    args = ["--root", str(options.dataset_root)]
+    if options.force_step2:
+        args.append("--force")
+    return args
 
-    # Step 4 – Compare PyBlinker ↔ MATLAB Blinker.
-    step4_args = ["--root", str(DATASET_ROOT)]
-    _run_step("step4_compare_", step4_args, step4_compare_.main)
+
+def _stage3_args(options: WorkflowOptions) -> list[str]:
+    args = ["--root", str(options.dataset_root)]
+    if options.force_step3:
+        args.append("--force")
+    return args
+
+
+def _default_stage_args(options: WorkflowOptions) -> list[str]:
+    return ["--root", str(options.dataset_root)]
+
+
+# Toggle individual stages by editing the ``enabled`` flag here instead of commenting
+# out code inside :func:`run_workflow`.
+WORKFLOW_STAGES: list[WorkflowStage] = [
+    WorkflowStage(
+        name="step1_prepare_dataset",
+        runner=step1_prepare_dataset.main,
+        build_args=_stage1_args,
+    ),
+    WorkflowStage(
+        name="step2_pyblinker",
+        runner=step2_pyblinker.main,
+        build_args=_stage2_args,
+    ),
+    WorkflowStage(
+        name="step3_run_blinker",
+        runner=step3_run_blinker.main,
+        build_args=_stage3_args,
+    ),
+    WorkflowStage(
+        name="step4_compare_",
+        runner=step4_compare_.main,
+        build_args=_default_stage_args,
+    ),
+    WorkflowStage(
+        name="step5_create_ground_truth",
+        runner=step5_create_ground_truth.main,
+        build_args=_default_stage_args,
+    ),
+]
+
+
+def run_workflow(*, force_step2: bool = False, force_step3: bool = False) -> None:
+    """Run the Murat 2018 end-to-end processing workflow."""
+
+    options = WorkflowOptions(
+        dataset_root=DATASET_ROOT,
+        force_step2=force_step2,
+        force_step3=force_step3,
+    )
+    _ensure_root_exists(options.dataset_root)
+
+    for stage in WORKFLOW_STAGES:
+        if not stage.enabled:
+            LOGGER.info("Skipping %s (disabled)", stage.name)
+            continue
+        args = list(stage.build_args(options))
+        _run_step(stage.name, args, stage.runner)
 
 
 def main(argv: list[str] | None = None) -> int:
