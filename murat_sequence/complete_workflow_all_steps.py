@@ -1,12 +1,13 @@
 """End-to-end runner for the Murat 2018 processing pipeline.
 
-This script orchestrates the four individual workflow steps provided in this
+This script orchestrates the five individual workflow steps provided in this
 repository:
 
 1. :mod:`murat_sequence.step1_prepare_dataset`
 2. :mod:`murat_sequence.step2_pyblinker`
 3. :mod:`murat_sequence.step3_run_blinker`
 4. :mod:`murat_sequence.step4_compare_`
+5. :mod:`murat_sequence.step5_create_ground_truth`
 
 The workflow uses ``D:/dataset/murat_2018`` as the canonical storage location
 for both the downloaded dataset and any derived outputs (FIF/EDF files,
@@ -39,6 +40,10 @@ from murat_sequence import (  # noqa: E402 - import depends on env var above
     step2_pyblinker,
     step3_run_blinker,
     step4_compare_,
+    step5_create_ground_truth,
+)
+from murat_sequence.step5_create_ground_truth import (  # noqa: E402 - import depends on env var above
+    DEFAULT_RECORDING_IDS,
 )
 
 LOGGER = logging.getLogger(__name__)
@@ -97,6 +102,11 @@ def run_workflow(*, force_step2: bool = False, force_step3: bool = False) -> Non
     # Step 4 – Compare PyBlinker ↔ MATLAB Blinker.
     step4_args = ["--root", str(DATASET_ROOT)]
     _run_step("step4_compare_", step4_args, step4_compare_.main)
+
+    # Step 5 – Generate and review blink ground-truth annotations.
+    step5_args = ["--root", str(DATASET_ROOT), "--no-plot"]
+    step5_args.extend(["--recording-id", *DEFAULT_RECORDING_IDS])
+    _run_step("step5_create_ground_truth", step5_args, step5_create_ground_truth.main)
 
 
 def main(argv: list[str] | None = None) -> int:
