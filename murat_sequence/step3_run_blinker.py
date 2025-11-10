@@ -157,9 +157,18 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         for edf_path in edf_files:
+            target = edf_path.with_name("blinker_results.pkl")
+            if target.exists() and not args.force:
+                LOGGER.info(
+                    "Skipping %s because Blinker outputs already exist at %s",
+                    edf_path,
+                    target,
+                )
+                continue
+
             try:
                 frames = run_blinker(eng, edf_path)
-                persist_results(edf_path, frames, overwrite=args.force)
+                persist_results(edf_path, frames, overwrite=True)
                 processed += 1
             except Exception as exc:  # noqa: BLE001
                 LOGGER.error("Blinker failed for %s: %s", edf_path, exc)

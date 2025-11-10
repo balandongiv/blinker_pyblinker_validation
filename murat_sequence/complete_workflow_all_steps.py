@@ -21,6 +21,7 @@ available channels by providing an empty channel specification.
 
 from __future__ import annotations
 
+import argparse
 import logging
 import os
 import sys
@@ -64,7 +65,7 @@ def _run_step(name: str, argv: Sequence[str], runner: Callable[[list[str] | None
     LOGGER.info("%s completed successfully", name)
 
 
-def run_workflow() -> None:
+def run_workflow(*, force_step2: bool = False, force_step3: bool = False) -> None:
     """Run the Murat 2018 end-to-end processing workflow."""
 
     _ensure_root_exists(DATASET_ROOT)
@@ -82,10 +83,14 @@ def run_workflow() -> None:
 
     # Step 2 – Execute PyBlinker.
     step2_args = ["--root", str(DATASET_ROOT)]
+    if force_step2:
+        step2_args.append("--force")
     _run_step("step2_pyblinker", step2_args, step2_pyblinker.main)
 
     # Step 3 – Execute MATLAB Blinker.
     step3_args = ["--root", str(DATASET_ROOT)]
+    if force_step3:
+        step3_args.append("--force")
     _run_step("step3_run_blinker", step3_args, step3_run_blinker.main)
 
     # Step 4 – Compare PyBlinker ↔ MATLAB Blinker.
@@ -93,12 +98,25 @@ def run_workflow() -> None:
     _run_step("step4_compare_", step4_args, step4_compare_.main)
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     """CLI entry point returning ``0`` on success."""
+
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--force-step2",
+        action="store_true",
+        help="Overwrite PyBlinker outputs if they already exist.",
+    )
+    parser.add_argument(
+        "--force-step3",
+        action="store_true",
+        help="Overwrite MATLAB Blinker outputs if they already exist.",
+    )
+    args = parser.parse_args(argv)
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     try:
-        run_workflow()
+        run_workflow(force_step2=args.force_step2, force_step3=args.force_step3)
     except Exception as exc:  # noqa: BLE001 - convert to exit status
         LOGGER.error("Workflow failed: %s", exc)
         return 1
