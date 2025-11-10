@@ -1,8 +1,8 @@
 """Batch-create and review blink ground-truth annotations for Murat et al. (2018).
 
 This tutorial step walks through comparing PyBlinker detections against the
-original MATLAB Blinker outputs for every recording under
-``data/murat_2018``.  For each recording the helper utilities load the
+original MATLAB Blinker outputs for each recording located under
+``data/murat_2018``.  For every recording the helper utilities load the
 ``pyblinker_results.pkl`` and ``blinker_results.pkl`` payloads, compute
 alignment metrics, attach comparison annotations to the corresponding
 ``.fif`` raw file, and automatically open the interactive MNE browser so the
@@ -27,9 +27,9 @@ from src.utils.ground_truth import (
 )
 
 
-# Default Murat et al. (2018) recording identifiers that are reviewed during the
-# tutorial.  The workflow still supports overriding the list through
-# ``--recording-id`` or explicit file paths when required.
+# Murat et al. (2018) recording identifiers that are highlighted in the
+# tutorial walkthrough.  The workflow still supports overriding the list
+# through ``--recording-id`` or explicit file paths when required.
 DEFAULT_RECORDING_IDS = (
     "12400385",
     "12400349",
@@ -116,17 +116,6 @@ def main(argv: Iterable[str] | None = None) -> int:
     """Parse ``argv`` and run the ground-truth workflow."""
 
     args = parse_args(argv)
-
-    # Unless a user explicitly requests individual recordings or provides
-    # manual file overrides, limit batch processing to the subset of Murat
-    # subjects reviewed in the tutorial materials.
-    if (
-        args.recording_ids is None
-        and not args.py_path
-        and not args.blinker_path
-        and not args.fif_path
-    ):
-        args.recording_ids = list(DEFAULT_RECORDING_IDS)
 
     return run_ground_truth(args)
 

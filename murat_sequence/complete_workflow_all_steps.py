@@ -42,6 +42,9 @@ from murat_sequence import (  # noqa: E402 - import depends on env var above
     step4_compare_,
     step5_create_ground_truth,
 )
+from murat_sequence.step5_create_ground_truth import (  # noqa: E402 - import depends on env var above
+    DEFAULT_RECORDING_IDS,
+)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -101,22 +104,8 @@ def run_workflow(*, force_step2: bool = False, force_step3: bool = False) -> Non
     _run_step("step4_compare_", step4_args, step4_compare_.main)
 
     # Step 5 – Generate and review blink ground-truth annotations.
-    step5_args = [
-        "--root",
-        str(DATASET_ROOT),
-        "--no-plot",
-        "--recording-id",
-        "12400385",
-        "12400349",
-        "12400376",
-        "12400397",
-        "12400391",
-        "12400370",
-        "12400346",
-        "12400373",
-        "9636511",
-        "12400394",
-    ]
+    step5_args = ["--root", str(DATASET_ROOT), "--no-plot"]
+    step5_args.extend(["--recording-id", *DEFAULT_RECORDING_IDS])
     _run_step("step5_create_ground_truth", step5_args, step5_create_ground_truth.main)
 
 
