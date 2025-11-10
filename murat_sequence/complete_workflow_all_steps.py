@@ -16,7 +16,7 @@ pyblinker/blinker results, reports, …). The environment variable
 
 Unlike the standalone ``step1`` script, which defaults to processing only the
 ``CH1`` and ``CH2`` channels, the orchestration mirrors that behaviour by
-explicitly requesting just those channels.
+requesting the explicit channel list for those two channels.
 """
 
 from __future__ import annotations
@@ -74,8 +74,9 @@ def run_workflow(*, force_step2: bool = False, force_step3: bool = False) -> Non
     step1_args = [
         "--root",
         str(DATASET_ROOT),
-        "--channel-spec",
-        "CH1,CH2",
+        "--channels",
+        "CH1",
+        "CH2",
         "--limit",
         "-1",
     ]
