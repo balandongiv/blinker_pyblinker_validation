@@ -27,6 +27,23 @@ from src.utils.ground_truth import (
 )
 
 
+# Default Murat et al. (2018) recording identifiers that are reviewed during the
+# tutorial.  The workflow still supports overriding the list through
+# ``--recording-id`` or explicit file paths when required.
+DEFAULT_RECORDING_IDS = (
+    "12400385",
+    "12400349",
+    "12400376",
+    "12400397",
+    "12400391",
+    "12400370",
+    "12400346",
+    "12400373",
+    "9636511",
+    "12400394",
+)
+
+
 def build_argument_parser() -> argparse.ArgumentParser:
     """Create the CLI argument parser used by the ground truth workflow."""
 
@@ -98,7 +115,20 @@ def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
 def main(argv: Iterable[str] | None = None) -> int:
     """Parse ``argv`` and run the ground-truth workflow."""
 
-    return run_ground_truth(parse_args(argv))
+    args = parse_args(argv)
+
+    # Unless a user explicitly requests individual recordings or provides
+    # manual file overrides, limit batch processing to the subset of Murat
+    # subjects reviewed in the tutorial materials.
+    if (
+        args.recording_ids is None
+        and not args.py_path
+        and not args.blinker_path
+        and not args.fif_path
+    ):
+        args.recording_ids = list(DEFAULT_RECORDING_IDS)
+
+    return run_ground_truth(args)
 
 
 if __name__ == "__main__":  # pragma: no cover - CLI entry point
