@@ -70,7 +70,14 @@ def run_workflow() -> None:
     _ensure_root_exists(DATASET_ROOT)
 
     # Step 1 – Download/conversion (process *all* channels).
-    step1_args = ["--root", str(DATASET_ROOT), "--channel-spec", ""]
+    step1_args = [
+        "--root",
+        str(DATASET_ROOT),
+        "--channel-spec",
+        "",
+        "--limit",
+        "-1",
+    ]
     _run_step("step1_prepare_dataset", step1_args, step1_prepare_dataset.main)
 
     # Step 2 – Execute PyBlinker.
