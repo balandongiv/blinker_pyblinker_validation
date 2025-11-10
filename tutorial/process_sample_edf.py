@@ -27,11 +27,18 @@ from src.matlab_runner.execute_blinker import (
     run_blinker,
     start_matlab,
 )
+from src.utils.config_utils import (
+    DEFAULT_CONFIG_PATH,
+    get_default_blinker_plugin,
+    get_path_setting,
+    load_config,
+)
 
-DEFAULT_EEGLAB_ROOT = Path(r"D:\\code development\\matlab_plugin\\eeglab2025.1.0")
+CONFIG = load_config(DEFAULT_CONFIG_PATH)
+DEFAULT_EEGLAB_ROOT = get_path_setting(CONFIG, "eeglab_root", env_var="EEGLAB_ROOT")
 TUTORIAL_ROOT = Path(__file__).resolve().parent
 TEST_EDF_PATH = TUTORIAL_ROOT / "mne_sample_audvis_raw.edf"
-BLINKER_PLUGIN = "Blinker1.2.0"
+BLINKER_PLUGIN = get_default_blinker_plugin(CONFIG) or "Blinker1.2.0"
 
 
 def build_blink_annotations(frames: Dict[str, pd.DataFrame], sfreq: float) -> mne.Annotations:

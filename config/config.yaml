@@ -12,14 +12,18 @@
 # All other paths are **relative** to `root_dir`, and should NOT be absolute.
 # The pipeline code will automatically resolve them using:
 #     full_path = Path(root_dir) / relative_path
-#
-
 # -------------------------------------------------------------------
 
 paths:
-  DEFAULT_DATASET_FILE: "config/murat_2018_dataset.txt"
-  ACTUAL_DATASET_STORE : "D:\dataset\murat_2018"
-  DEBUG_DATASET_STORE : "data/murat_2018"
-  DEFAULT_EEGLAB_ROOT: "D:\code development\matlab_plugin\eeglab2025.1.0"
-DEFAULT_SAMPLING_RATE : 200.0
-DEFAULT_CHANNELS : "CH1,CH2"
+  root_dir: "."
+  dataset_file: "config/murat_2018_dataset.txt"
+  download_root: "data/murat_2018"
+  raw_downsampled: "data/murat_2018"
+  eeglab_root: "D:/code development/matlab_plugin/eeglab2025.1.0"
+
+defaults:
+  sampling_rate_hz: 200.0
+  channels:
+    - CH1
+    - CH2
+  blinker_plugin: "Blinker1.2.0"
