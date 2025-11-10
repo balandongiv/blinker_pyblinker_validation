@@ -15,8 +15,8 @@ pyblinker/blinker results, reports, …). The environment variable
 ``download_root``/``raw_downsampled`` paths to that directory.
 
 Unlike the standalone ``step1`` script, which defaults to processing only the
-``CH1`` and ``CH2`` channels, the orchestration here explicitly requests all
-available channels by providing an empty channel specification.
+``CH1`` and ``CH2`` channels, the orchestration mirrors that behaviour by
+explicitly requesting just those channels.
 """
 
 from __future__ import annotations
@@ -70,12 +70,12 @@ def run_workflow(*, force_step2: bool = False, force_step3: bool = False) -> Non
 
     _ensure_root_exists(DATASET_ROOT)
 
-    # Step 1 – Download/conversion (process *all* channels).
+    # Step 1 – Download/conversion (limit to CH1/CH2 like the standalone script).
     step1_args = [
         "--root",
         str(DATASET_ROOT),
         "--channel-spec",
-        "",
+        "CH1,CH2",
         "--limit",
         "-1",
     ]
