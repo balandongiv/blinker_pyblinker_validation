@@ -183,28 +183,11 @@ def prepare_event_tables(
         )
     py_events=py_events_raw.sort_values(by="start_blink").reset_index(drop=True)
 
-
-    # blinker_events_raw = extract_events(blinker_payload, fallback_key="blinkFits")
-
-    # py_events = normalise_events(py_events_raw, sample_rate=py_rate, target_rate=target_rate)
-
     blinker_event=blinker_payload["frames"]["blinkFits"]
     blinker_events = blinker_event[["leftZero", "rightZero", "maxValue"]].rename(
         columns={"leftZero": "start_blink", "rightZero": "end_blink"}
         )
     blinker_events =blinker_events.sort_values(by="start_blink").reset_index(drop=True)
-    # blinker_events = normalise_events(
-    #     blinker_events_raw,
-    #     sample_rate=blinker_rate,
-    #     target_rate=target_rate,
-    # )
-    #
-    # if target_rate is None and not py_events.empty:
-    #     target_rate = float(py_events.attrs.get("sampling_rate_hz", 0) or 0) or None
-    #
-    # if target_rate is None and not blinker_events.empty:
-    #     target_rate = float(blinker_events.attrs.get("sampling_rate_hz", 0) or 0) or None
-
     return py_events, blinker_events, target_rate
 
 
