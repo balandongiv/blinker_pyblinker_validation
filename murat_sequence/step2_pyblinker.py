@@ -121,7 +121,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--filter-low", type=float, default=0.5)
     parser.add_argument("--filter-high", type=float, default=30.0)
-    parser.add_argument("--resample", type=float, default=100.0)
+    parser.add_argument("--resample", type=float, default=200.0)
     return parser.parse_args(argv)
 
 

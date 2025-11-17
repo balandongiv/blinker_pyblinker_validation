@@ -76,37 +76,37 @@ def run_workflow(*, force_step2: bool = False, force_step3: bool = False) -> Non
     _ensure_root_exists(DATASET_ROOT)
 
     # Step 1 – Download/conversion (limit to CH1/CH2 like the standalone script).
-    step1_args = [
-        "--root",
-        str(DATASET_ROOT),
-        "--channels",
-        "CH1",
-        "CH2",
-        "--limit",
-        "-1",
-    ]
-    _run_step("step1_prepare_dataset", step1_args, step1_prepare_dataset.main)
-
+    # step1_args = [
+    #     "--root",
+    #     str(DATASET_ROOT),
+    #     "--channels",
+    #     "CH1",
+    #     "CH2",
+    #     "--limit",
+    #     "-1",
+    # ]
+    # _run_step("step1_prepare_dataset", step1_args, step1_prepare_dataset.main)
+    #
     # Step 2 – Execute PyBlinker.
     step2_args = ["--root", str(DATASET_ROOT)]
     if force_step2:
         step2_args.append("--force")
     _run_step("step2_pyblinker", step2_args, step2_pyblinker.main)
-
-    # Step 3 – Execute MATLAB Blinker.
-    step3_args = ["--root", str(DATASET_ROOT)]
-    if force_step3:
-        step3_args.append("--force")
-    _run_step("step3_run_blinker", step3_args, step3_run_blinker.main)
+    #
+    # # Step 3 – Execute MATLAB Blinker.
+    # step3_args = ["--root", str(DATASET_ROOT)]
+    # if force_step3:
+    #     step3_args.append("--force")
+    # _run_step("step3_run_blinker", step3_args, step3_run_blinker.main)
 
     # Step 4 – Compare PyBlinker ↔ MATLAB Blinker.
-    step4_args = ["--root", str(DATASET_ROOT)]
-    _run_step("step4_compare_", step4_args, step4_compare_.main)
+    # step4_args = ["--root", str(DATASET_ROOT)]
+    # _run_step("step4_compare_", step4_args, step4_compare_.main)
 
-    # Step 5 – Generate and review blink ground-truth annotations.
-    step5_args = ["--root", str(DATASET_ROOT), "--no-plot"]
-    step5_args.extend(["--recording-id", *DEFAULT_RECORDING_IDS])
-    _run_step("step5_create_ground_truth", step5_args, step5_create_ground_truth.main)
+    # # Step 5 – Generate and review blink ground-truth annotations.
+    # step5_args = ["--root", str(DATASET_ROOT), "--no-plot"]
+    # step5_args.extend(["--recording-id", *DEFAULT_RECORDING_IDS])
+    # _run_step("step5_create_ground_truth", step5_args, step5_create_ground_truth.main)
 
 
 def main(argv: list[str] | None = None) -> int:

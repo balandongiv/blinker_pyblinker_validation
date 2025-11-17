@@ -12,7 +12,8 @@ from typing import Iterable, Mapping, Sequence
 import numpy as np
 import pandas as pd
 
-
+import mne
+from pyblinker.utils.evaluation import blink_comparison
 LOGGER = logging.getLogger(__name__)
 
 
@@ -172,21 +173,37 @@ def prepare_event_tables(
     blinker_rate = extract_blinker_sampling_rate(blinker_payload)
     target_rate = blinker_rate or py_rate
 
-    py_events_raw = extract_events(py_payload, fallback_key="events")
-    blinker_events_raw = extract_events(blinker_payload, fallback_key="blinkFits")
+    py_events_raw = py_payload["events"]
+    py_events_raw = py_events_raw[["left_zero", "right_zero", "max_value"]].rename(
+        columns={
+                "left_zero": "start_blink",
+                "right_zero": "end_blink",
+                "max_value": "maxValue",
+                }
+        )
+    py_events=py_events_raw.sort_values(by="start_blink").reset_index(drop=True)
 
-    py_events = normalise_events(py_events_raw, sample_rate=py_rate, target_rate=target_rate)
-    blinker_events = normalise_events(
-        blinker_events_raw,
-        sample_rate=blinker_rate,
-        target_rate=target_rate,
-    )
 
-    if target_rate is None and not py_events.empty:
-        target_rate = float(py_events.attrs.get("sampling_rate_hz", 0) or 0) or None
+    # blinker_events_raw = extract_events(blinker_payload, fallback_key="blinkFits")
 
-    if target_rate is None and not blinker_events.empty:
-        target_rate = float(blinker_events.attrs.get("sampling_rate_hz", 0) or 0) or None
+    # py_events = normalise_events(py_events_raw, sample_rate=py_rate, target_rate=target_rate)
+
+    blinker_event=blinker_payload["frames"]["blinkFits"]
+    blinker_events = blinker_event[["leftZero", "rightZero", "maxValue"]].rename(
+        columns={"leftZero": "start_blink", "rightZero": "end_blink"}
+        )
+    blinker_events =blinker_events.sort_values(by="start_blink").reset_index(drop=True)
+    # blinker_events = normalise_events(
+    #     blinker_events_raw,
+    #     sample_rate=blinker_rate,
+    #     target_rate=target_rate,
+    # )
+    #
+    # if target_rate is None and not py_events.empty:
+    #     target_rate = float(py_events.attrs.get("sampling_rate_hz", 0) or 0) or None
+    #
+    # if target_rate is None and not blinker_events.empty:
+    #     target_rate = float(blinker_events.attrs.get("sampling_rate_hz", 0) or 0) or None
 
     return py_events, blinker_events, target_rate
 
@@ -350,6 +367,7 @@ def render_report(
     return report_path
 
 
+
 def compare_recordings(
     root: Path,
     *,
@@ -363,53 +381,41 @@ def compare_recordings(
     for recording_dir in iter_recordings(root):
         py_path = recording_dir / "pyblinker_results.pkl"
         blinker_path = recording_dir / "blinker_results.pkl"
-        if not py_path.exists() or not blinker_path.exists():
-            LOGGER.warning("Skipping %s – missing outputs", recording_dir.name)
-            continue
+        fif_fname=f"{recording_dir.name}.fif"
 
-        try:
-            py_payload = load_pickle(py_path)
-            blinker_payload = load_pickle(blinker_path)
-        except Exception as exc:  # noqa: BLE001
-            LOGGER.error("Failed to load outputs for %s: %s", recording_dir, exc)
-            continue
 
+
+        py_payload = load_pickle(py_path)
+        blinker_payload = load_pickle(blinker_path)
+
+        ch=py_payload['metrics']['channel']
+        raw = mne.io.read_raw_fif(recording_dir/ fif_fname, preload=True)
+        signal = raw.get_data(picks=[ch])[0]
         py_events, blinker_events, sample_rate = prepare_event_tables(
             py_payload,
             blinker_payload,
         )
 
-        if py_events.empty or blinker_events.empty:
-            LOGGER.warning(
-                "Skipping %s – insufficient event data for comparison",
-                recording_dir.name,
-            )
-            continue
+        N_PREVIEW_ROWS = 10
+        N_DIFF_ROWS = 20
 
-        try:
-            alignments, metrics = comparator.compute_alignments_and_metrics(
-                detected_df=py_events,
-                ground_truth_df=blinker_events,
-                tolerance_samples=tolerance_samples,
-            )
-        except Exception as exc:  # noqa: BLE001
-            LOGGER.error("Failed to compute comparison metrics for %s: %s", recording_dir.name, exc)
-            continue
-
-        onset_mae_sec = compute_onset_mae(
-            alignments,
-            sampling_rate_hz=sample_rate,
+        comparison = blink_comparison.compare_detected_vs_ground_truth(
+            py_events,
+            blinker_events,
+            sample_rate,
             tolerance_samples=tolerance_samples,
-        )
-
-        comparisons.append(
-            RecordingComparison(
-                recording_id=recording_dir.name,
-                py_events=py_events,
-                blinker_events=blinker_events,
-                metrics=metrics,
-                onset_mae_sec=onset_mae_sec,
+            n_preview_rows=N_PREVIEW_ROWS,
+            n_diff_rows=N_DIFF_ROWS,
+            detected_signal=signal,
             )
-        )
+
+        to_plot=False
+        if to_plot:
+            metrics = comparison.metrics
+            diff_table = comparison.diff_table
+            annotations = comparison.annotations
+            raw.set_annotations(annotations)
+            raw.plot(block=True)
+
 
     return comparisons
