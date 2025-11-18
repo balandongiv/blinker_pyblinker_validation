@@ -38,8 +38,9 @@ Flowchart-style walkthrough of the GUI logic:
 
 6. Merge and save
    → A confirmation dialog asks whether to merge and persist changes.
-   → The app removes any existing annotations that overlap the edited window,
-     merges the new ones, and sorts by onset.
+   → The app isolates the annotations in the edited window, lets the user edit
+     only that temporary slice, then merges the updated slice back together
+     with untouched annotations outside the window.
    → Before overwriting the main CSV, it writes a timestamped backup to a
      ``backups/`` folder beside the CSV.
    → A logger writes major events (segments processed, additions/removals,
@@ -264,14 +265,46 @@ def backup_existing_csv(csv_path: Path) -> None:
 def merge_annotations(
     global_frame: pd.DataFrame, segment_frame: pd.DataFrame, start: float, end: float
 ) -> tuple[pd.DataFrame, int]:
-    """Merge segment annotations into the global set, replacing overlaps."""
+    """Merge a freshly edited segment back into the untouched annotations."""
 
     durations = global_frame["duration"].fillna(0)
     overlaps = (global_frame["onset"] < end) & ((global_frame["onset"] + durations) > start)
-    kept = global_frame.loc[~overlaps]
-    merged = pd.concat([kept, segment_frame], ignore_index=True)
+    outside_segment = global_frame.loc[~overlaps]
+    merged = pd.concat([outside_segment, segment_frame], ignore_index=True)
     merged = merged.sort_values("onset").reset_index(drop=True)
     return merged, int(overlaps.sum())
+
+
+def split_annotations_by_window(
+    frame: pd.DataFrame, start: float, end: float
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Return annotations inside and outside a time window."""
+
+    durations = frame["duration"].fillna(0)
+    in_window = (frame["onset"] < end) & ((frame["onset"] + durations) > start)
+    return frame.loc[in_window].copy(), frame.loc[~in_window].copy()
+
+
+def summarize_segment_changes(
+    original_segment: pd.DataFrame, updated_segment: pd.DataFrame
+) -> tuple[int, int]:
+    """Return counts of added and removed annotations within a segment."""
+
+    def _to_set(df: pd.DataFrame) -> set[tuple[float, float, str]]:
+        return {
+            (
+                round(float(row["onset"]), 6),
+                round(float(row["duration"] or 0), 6),
+                str(row["description"]),
+            )
+            for _, row in df.iterrows()
+        }
+
+    before = _to_set(original_segment)
+    after = _to_set(updated_segment)
+    added = len(after - before)
+    removed = len(before - after)
+    return added, removed
 
 
 def launch_browser_and_collect(raw: mne.io.Raw, session: AnnotationSession) -> pd.DataFrame:
@@ -525,8 +558,12 @@ class AnnotationApp:
             f"Segment {start:.1f}–{end:.1f} s status: {status}"
         )
 
+        segment_existing, outside_segment = split_annotations_by_window(
+            self.annotation_frame, start, end
+        )
+
         raw = mne.io.read_raw_fif(self.selected_file, preload=True)
-        raw.set_annotations(annotations_from_frame(self.annotation_frame))
+        raw.set_annotations(annotations_from_frame(segment_existing))
         session = AnnotationSession(
             fif_path=self.selected_file,
             csv_path=self.selected_file.with_suffix(".csv"),
@@ -544,16 +581,21 @@ class AnnotationApp:
             self.status_var.set("Changes discarded at user request.")
             return
 
-        merged, dropped = merge_annotations(self.annotation_frame, segment_frame, start, end)
+        added, removed = summarize_segment_changes(segment_existing, segment_frame)
+        merged, dropped = merge_annotations(
+            pd.concat([segment_existing, outside_segment], ignore_index=True),
+            segment_frame,
+            start,
+            end,
+        )
         save_annotations(session.csv_path, merged)
-        added = len(segment_frame)
         self.annotation_frame = merged
         self.status_var.set(f"Saved annotations to {session.csv_path}")
         self._refresh_info_panel()
         self._log_history(
             (
                 f"Saved segment {start:.1f}-{end:.1f} s for {self.selected_file.name} "
-                f"(added: {added}, dropped: {dropped}, total: {len(self.annotation_frame)})"
+                f"(added: {added}, removed: {removed}, dropped: {dropped}, total: {len(self.annotation_frame)})"
             )
         )
 
