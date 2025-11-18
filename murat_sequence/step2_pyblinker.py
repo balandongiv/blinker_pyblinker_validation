@@ -30,7 +30,7 @@ LOGGER = logging.getLogger(__name__)
 class PyBlinkerParams:
     filter_low: float | None = 0.5
     filter_high: float | None = 30.0
-    resample_rate: float | None = 100.0
+    resample_rate: float | None = 200.0
     n_jobs: int = 1
     use_multiprocessing: bool = True
 

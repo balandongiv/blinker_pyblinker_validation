@@ -88,10 +88,10 @@ def run_workflow(*, force_step2: bool = False, force_step3: bool = False) -> Non
     # _run_step("step1_prepare_dataset", step1_args, step1_prepare_dataset.main)
     #
     # Step 2 – Execute PyBlinker.
-    step2_args = ["--root", str(DATASET_ROOT)]
-    if force_step2:
-        step2_args.append("--force")
-    _run_step("step2_pyblinker", step2_args, step2_pyblinker.main)
+    # step2_args = ["--root", str(DATASET_ROOT)]
+    # if force_step2:
+    #     step2_args.append("--force")
+    # _run_step("step2_pyblinker", step2_args, step2_pyblinker.main)
     #
     # # Step 3 – Execute MATLAB Blinker.
     # step3_args = ["--root", str(DATASET_ROOT)]
@@ -100,8 +100,8 @@ def run_workflow(*, force_step2: bool = False, force_step3: bool = False) -> Non
     # _run_step("step3_run_blinker", step3_args, step3_run_blinker.main)
 
     # Step 4 – Compare PyBlinker ↔ MATLAB Blinker.
-    # step4_args = ["--root", str(DATASET_ROOT)]
-    # _run_step("step4_compare_", step4_args, step4_compare_.main)
+    step4_args = ["--root", str(DATASET_ROOT)]
+    _run_step("step4_compare_", step4_args, step4_compare_.main)
 
     # # Step 5 – Generate and review blink ground-truth annotations.
     # step5_args = ["--root", str(DATASET_ROOT), "--no-plot"]
