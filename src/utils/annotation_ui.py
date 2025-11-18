@@ -84,7 +84,7 @@ from tkinter import (
 )
 
 ANNOTATION_COLUMNS = ["onset", "duration", "description"]
-DEFAULT_ROOT = Path(r"D:\\dataset\\murat_2018")
+DEFAULT_ROOT = Path(r"D:\dataset\murat_2018")
 logger = logging.getLogger(__name__)
 
 
@@ -141,7 +141,17 @@ def find_fif_files(root: Path, provided: Iterable[str] | None = None) -> list[Pa
     if provided:
         paths = [Path(p) for p in provided]
     else:
-        paths = sorted(root.rglob("*.fif"))
+        if not root.exists():
+            raise FileNotFoundError(
+                f"The root path {root} does not exist; please verify the dataset location."
+            )
+        candidates = list(root.rglob("*.fif")) + list(root.rglob("*.fif.gz"))
+        seen: set[Path] = set()
+        paths: list[Path] = []
+        for path in sorted(candidates):
+            if path not in seen:
+                seen.add(path)
+                paths.append(path)
     existing = [path for path in paths if path.exists()]
     if not existing:
         raise FileNotFoundError("No FIF files were found in the specified inputs.")
@@ -285,15 +295,16 @@ class AnnotationApp:
 
     def __init__(
         self,
-        root_path: Path,
+        root_path: Path | None = None,
         provided_files: Optional[Iterable[str]] = None,
         annotation_threshold: int = 100,
     ) -> None:
-        self.root_path = root_path
+        self.root_path = root_path or DEFAULT_ROOT
         self.provided_files = provided_files
         self.annotation_threshold = annotation_threshold
 
-        self.log_path = (self.root_path if self.root_path.exists() else Path.cwd()) / "annotation_ui.log"
+        log_dir = (self.root_path if self.root_path.exists() else Path.cwd()) / "logs"
+        self.log_path = log_dir / "annotation_ui.log"
         configure_logger(self.log_path)
 
         self.window = Tk()
@@ -381,6 +392,12 @@ class AnnotationApp:
             self.window.destroy()
             return
 
+        self.status_var.set(
+            f"Found {len(self.fif_files)} FIF files under {self.root_path}"
+        )
+        self._log_history(
+            f"Scanning root {self.root_path} yielded {len(self.fif_files)} FIF files"
+        )
         for path in self.fif_files:
             self.file_list.insert(END, path.name)
 
