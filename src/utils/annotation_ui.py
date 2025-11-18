@@ -1,41 +1,48 @@
-"""Interactive CLI for segment-wise MNE annotation management.
+"""Tkinter GUI for segment-wise MNE annotation management.
 
-Workflow overview (high level flowchart in text):
+Flowchart-style walkthrough of the GUI logic:
 
-1. Discover FIF candidates
-   → If explicit paths are provided, filter to existing files.
-   → Otherwise, search the ``--root`` directory for ``*.fif``.
-   → If no files remain, abort with an error.
+1. Launch and discover FIF files
+   → Look for the provided explicit paths; otherwise search the ``root`` folder
+     for ``*.fif``.
+   → Populate the list widget; if nothing is found, show an error dialog and
+     exit.
 
-2. Choose target recording
-   → Prompt the user to pick a file (auto-select when only one is available).
-   → Derive the companion CSV path (same stem, ``.csv`` extension).
+2. Pick a target recording
+   → The user clicks a file in the list; the app derives the companion CSV path
+     with the same stem and a ``.csv`` extension.
+   → Load the CSV (if it exists) into a normalized dataframe and report the
+     current annotation count.
 
-3. Embed existing annotations
-   → Load the CSV if present; otherwise start with an empty frame.
-   → Normalize the columns to onset/duration/description.
-   → Attach the annotations to the loaded ``Raw`` object.
+3. Inspect metadata
+   → Open the FIF header (no preload) to determine total duration.
+   → Update the info panel with recording length and the number of existing
+     annotations.
 
-4. Decide on time window
-   → Compute total duration and annotation count.
-   → If ``--t-start/--t-end`` are provided, use them directly.
-   → Else, force the user to enter a window when the annotation count exceeds
-     the configured threshold; otherwise default to the whole recording.
-   → Flag whether the selected window overlaps existing annotations to inform
-     the UI title ("already annotated" vs "new segment").
+4. Choose a time window
+   → The "Start (s)" and "End (s)" fields accept numeric inputs.
+   → If both fields are empty **and** the annotation count is below the
+     threshold, the app defaults to the full recording.
+   → If the annotation count exceeds the threshold, the app requires explicit
+     start/end values and will warn until valid numbers are provided.
+   → The app checks whether any annotations overlap the chosen window so the
+     plot title can communicate "already annotated" vs "new segment".
 
 5. Launch the MNE browser
-   → Crop the ``Raw`` to the chosen window.
-   → Display the segment with a title showing filename, time range, and status.
-   → Block until the user finishes manual edits, then collect updated
-     annotations and shift onsets back to absolute time.
+   → Load the FIF with ``preload=True`` and attach current annotations.
+   → Crop the raw object to the requested window and open ``.plot`` with a
+     title containing the filename, range, and status.
+   → The plot blocks while the user edits annotations; on close, the updated
+     annotations are exported with onsets shifted back to absolute time.
 
-6. Merge and persist
-   → Ask the user to confirm saving.
-   → Remove any existing annotations that overlap the edited window, then merge
-     the new ones and sort by onset.
-   → Create a timestamped backup in ``backups/`` if a CSV already exists.
-   → Write the merged frame back to the main CSV as the latest state.
+6. Merge and save
+   → A confirmation dialog asks whether to merge and persist changes.
+   → The app removes any existing annotations that overlap the edited window,
+     merges the new ones, and sorts by onset.
+   → Before overwriting the main CSV, it writes a timestamped backup to a
+     ``backups/`` folder beside the CSV.
+   → The main CSV always reflects the latest global annotation set for the FIF
+     file.
 """
 
 from __future__ import annotations
@@ -45,10 +52,11 @@ import shutil
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Optional
 
 import mne
 import pandas as pd
+from tkinter import END, BOTH, LEFT, RIGHT, TOP, BOTTOM, X, Y, Label, Listbox, Scrollbar, StringVar, Tk, Entry, Frame, Button, messagebox
 
 ANNOTATION_COLUMNS = ["onset", "duration", "description"]
 
@@ -125,53 +133,18 @@ def segment_already_annotated(frame: pd.DataFrame, start: float, end: float) -> 
 
 def prompt_time_segment(total_duration: float, required: bool) -> tuple[float, float]:
     """Ask the user for a time window in seconds."""
-
-    prompt_text = (
-        "Enter start and end times in seconds (e.g. '0 600'). "
-        "Press Enter for the full recording." if not required else ""
-    )
-    while True:
-        raw = input(f"Time window [0-{total_duration:.1f}]: {prompt_text}\n> ").strip()
-        if not raw and not required:
-            return 0.0, float(total_duration)
-        try:
-            start_str, end_str = raw.split()
-            start, end = float(start_str), float(end_str)
-        except ValueError:
-            print("Please provide two numbers: start end (in seconds).")
-            continue
-        if start < 0 or end <= start or end > total_duration:
-            print("Invalid range; ensure 0 <= start < end <= total duration.")
-            continue
-        return start, end
+    raise RuntimeError("prompt_time_segment is not used in the GUI workflow.")
 
 
 def select_file(fif_files: list[Path]) -> Path:
     """Prompt the user to choose a FIF file from the available options."""
-
-    if len(fif_files) == 1:
-        return fif_files[0]
-    print("Available FIF files:")
-    for idx, path in enumerate(fif_files, start=1):
-        print(f"[{idx}] {path.name}")
-    while True:
-        raw = input("Choose a file by number: ").strip()
-        if not raw:
-            continue
-        try:
-            choice = int(raw)
-        except ValueError:
-            print("Please enter a valid number.")
-            continue
-        if 1 <= choice <= len(fif_files):
-            return fif_files[choice - 1]
-        print("Choice out of range; try again.")
+    raise RuntimeError("select_file is not used in the GUI workflow.")
 
 
 def prepare_session(
     fif_path: Path, annotation_threshold: int, start: float | None, end: float | None
 ) -> AnnotationSession:
-    """Load metadata and decide which segment to annotate."""
+    """Preserved for CLI compatibility; the GUI does not use this helper."""
 
     csv_path = fif_path.with_suffix(".csv")
     annotation_frame = load_annotation_frame(csv_path)
@@ -243,41 +216,214 @@ def save_annotations(csv_path: Path, frame: pd.DataFrame) -> None:
     print(f"Saved annotations to {csv_path}")
 
 
-def run_ui(root: str, annotation_threshold: int, files: Iterable[str] | None, start: float | None, end: float | None) -> None:
-    """Run the interactive annotation workflow."""
+class AnnotationApp:
+    """Tkinter GUI controller for annotation management."""
 
-    base = Path(root)
-    fif_files = find_fif_files(base, provided=files)
-    fif_path = select_file(fif_files)
-    session = prepare_session(
-        fif_path=fif_path,
-        annotation_threshold=annotation_threshold,
-        start=start,
-        end=end,
-    )
+    def __init__(
+        self,
+        root_path: Path,
+        provided_files: Optional[Iterable[str]] = None,
+        annotation_threshold: int = 100,
+    ) -> None:
+        self.root_path = root_path
+        self.provided_files = provided_files
+        self.annotation_threshold = annotation_threshold
 
-    annotation_frame = load_annotation_frame(session.csv_path)
-    raw = mne.io.read_raw_fif(session.fif_path, preload=True)
-    raw.set_annotations(annotations_from_frame(annotation_frame))
+        self.window = Tk()
+        self.window.title("MNE Annotation Helper")
 
-    print(
-        "\n".join(
-            [
-                f"Selected: {session.fif_path}",
-                f"Time range: {session.start:.1f}–{session.end:.1f} s",
-                f"Segment status: {'previously annotated' if session.annotated_before else 'new'}",
-            ]
+        self.status_var = StringVar(value="Select a FIF file to begin.")
+        self.info_var = StringVar(value="No file selected.")
+        self.segment_status_var = StringVar(value="")
+
+        self.start_entry: Entry
+        self.end_entry: Entry
+        self.file_list: Listbox
+
+        self.annotation_frame = pd.DataFrame(columns=ANNOTATION_COLUMNS)
+        self.total_duration: float | None = None
+        self.selected_file: Path | None = None
+
+        self._build_ui()
+        self._populate_files()
+
+    def _build_ui(self) -> None:
+        """Construct the Tkinter layout."""
+
+        top_frame = Frame(self.window)
+        top_frame.pack(side=TOP, fill=BOTH, expand=True, padx=8, pady=8)
+
+        list_frame = Frame(top_frame)
+        list_frame.pack(side=LEFT, fill=BOTH, expand=True)
+
+        Label(list_frame, text="Available FIF files:").pack(anchor="w")
+        scrollbar = Scrollbar(list_frame)
+        scrollbar.pack(side=RIGHT, fill=Y)
+        self.file_list = Listbox(list_frame, yscrollcommand=scrollbar.set, height=12)
+        self.file_list.pack(side=LEFT, fill=BOTH, expand=True)
+        scrollbar.config(command=self.file_list.yview)
+        self.file_list.bind("<<ListboxSelect>>", self._on_file_select)
+
+        controls = Frame(top_frame)
+        controls.pack(side=RIGHT, fill=BOTH, expand=True, padx=(12, 0))
+
+        Label(controls, textvariable=self.info_var, wraplength=320, justify=LEFT).pack(
+            anchor="w", pady=(0, 8)
         )
-    )
 
-    segment_frame = launch_browser_and_collect(raw, session)
+        entry_frame = Frame(controls)
+        entry_frame.pack(fill=X, pady=4)
+        Label(entry_frame, text="Start (s):").pack(side=LEFT)
+        self.start_entry = Entry(entry_frame, width=10)
+        self.start_entry.pack(side=LEFT, padx=(4, 12))
+        Label(entry_frame, text="End (s):").pack(side=LEFT)
+        self.end_entry = Entry(entry_frame, width=10)
+        self.end_entry.pack(side=LEFT, padx=4)
 
-    if input("Save merged annotations to CSV? [y/N]: ").strip().lower() != "y":
-        print("Changes discarded at user request.")
-        return
+        Button(controls, text="Open Segment", command=self._open_segment).pack(
+            anchor="w", pady=8
+        )
+        Label(controls, textvariable=self.segment_status_var, fg="blue").pack(
+            anchor="w", pady=(0, 8)
+        )
 
-    merged = merge_annotations(annotation_frame, segment_frame, session.start, session.end)
-    save_annotations(session.csv_path, merged)
+        Label(self.window, textvariable=self.status_var, fg="green").pack(
+            side=BOTTOM, fill=X, padx=8, pady=4
+        )
+
+    def _populate_files(self) -> None:
+        """Populate the listbox with available FIF files."""
+
+        try:
+            self.fif_files = find_fif_files(self.root_path, provided=self.provided_files)
+        except FileNotFoundError as exc:
+            messagebox.showerror("No FIF files", str(exc))
+            self.window.destroy()
+            return
+
+        for path in self.fif_files:
+            self.file_list.insert(END, path.name)
+
+        if len(self.fif_files) == 1:
+            self.file_list.selection_set(0)
+            self._on_file_select()
+
+    def _on_file_select(self, event: object | None = None) -> None:  # noqa: ARG002
+        """Handle a selection change in the listbox."""
+
+        selection = self.file_list.curselection()
+        if not selection:
+            return
+        idx = selection[0]
+        self.selected_file = self.fif_files[idx]
+        csv_path = self.selected_file.with_suffix(".csv")
+        self.annotation_frame = load_annotation_frame(csv_path)
+
+        raw = mne.io.read_raw_fif(self.selected_file, preload=False)
+        self.total_duration = float(raw.times[-1])
+        count = len(self.annotation_frame)
+
+        self.info_var.set(
+            f"Selected: {self.selected_file.name}\n"
+            f"Duration: {self.total_duration:.1f} s\n"
+            f"Annotations: {count}"
+        )
+        self.segment_status_var.set("")
+        self.status_var.set("Enter a segment and click Open Segment.")
+
+    def _validate_time_window(self) -> Optional[tuple[float, float]]:
+        """Return a validated time window or ``None`` if invalid."""
+
+        if self.total_duration is None:
+            messagebox.showwarning("No file", "Please select a FIF file first.")
+            return None
+
+        start_raw = self.start_entry.get().strip()
+        end_raw = self.end_entry.get().strip()
+        require_segment = len(self.annotation_frame) > self.annotation_threshold
+
+        if not start_raw and not end_raw:
+            if require_segment:
+                messagebox.showwarning(
+                    "Segment required",
+                    "This file has many annotations; please enter start and end times.",
+                )
+                return None
+            return 0.0, float(self.total_duration)
+
+        try:
+            start = float(start_raw)
+            end = float(end_raw)
+        except ValueError:
+            messagebox.showerror("Invalid input", "Start and End must be numbers.")
+            return None
+
+        if start < 0 or end <= start or (self.total_duration and end > self.total_duration):
+            messagebox.showerror(
+                "Invalid range",
+                "Ensure 0 <= start < end and the end does not exceed the recording length.",
+            )
+            return None
+
+        return start, end
+
+    def _open_segment(self) -> None:
+        """Launch the MNE browser for the selected segment."""
+
+        if self.selected_file is None:
+            messagebox.showwarning("No file", "Please select a FIF file first.")
+            return
+
+        window = self._validate_time_window()
+        if window is None:
+            return
+        start, end = window
+        annotated_before = segment_already_annotated(self.annotation_frame, start, end)
+        status = "already annotated" if annotated_before else "new segment"
+        self.segment_status_var.set(
+            f"Segment {start:.1f}–{end:.1f} s status: {status}"
+        )
+
+        raw = mne.io.read_raw_fif(self.selected_file, preload=True)
+        raw.set_annotations(annotations_from_frame(self.annotation_frame))
+        session = AnnotationSession(
+            fif_path=self.selected_file,
+            csv_path=self.selected_file.with_suffix(".csv"),
+            start=start,
+            end=end,
+            annotated_before=annotated_before,
+        )
+
+        segment_frame = launch_browser_and_collect(raw, session)
+
+        if not messagebox.askyesno(
+            "Save annotations",
+            "Merge and save these annotations to the CSV?",
+        ):
+            self.status_var.set("Changes discarded at user request.")
+            return
+
+        merged = merge_annotations(self.annotation_frame, segment_frame, start, end)
+        save_annotations(session.csv_path, merged)
+        self.annotation_frame = merged
+        self.status_var.set(f"Saved annotations to {session.csv_path}")
+        self.info_var.set(
+            f"Selected: {self.selected_file.name}\n"
+            f"Duration: {self.total_duration:.1f} s\n"
+            f"Annotations: {len(self.annotation_frame)}"
+        )
+
+    def run(self) -> None:
+        """Start the Tkinter main loop."""
+
+        self.window.mainloop()
+
+
+def run_ui(root: str, annotation_threshold: int, files: Iterable[str] | None, start: float | None, end: float | None) -> None:
+    """Entry point retained for CLI parity; not used by the Tkinter GUI."""
+
+    del root, annotation_threshold, files, start, end
+    raise RuntimeError("The CLI workflow has been replaced by the Tkinter GUI.")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -320,13 +466,8 @@ def main() -> None:
 
     parser = build_parser()
     args = parser.parse_args()
-    run_ui(
-        root=args.root,
-        annotation_threshold=args.threshold,
-        files=args.files,
-        start=args.t_start,
-        end=args.t_end,
-    )
+    app = AnnotationApp(root_path=Path(args.root), provided_files=args.files, annotation_threshold=args.threshold)
+    app.run()
 
 
 if __name__ == "__main__":
