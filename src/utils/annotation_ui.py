@@ -624,10 +624,17 @@ class AnnotationApp:
             self.status_var.set("Changes discarded at user request.")
             return
 
-        added, removed = summarize_segment_changes(segment_existing, segment_frame)
-        merged = pd.concat([outside_segment, segment_frame], ignore_index=True)
+        # Reload from disk before merging to ensure we preserve any changes made
+        # outside the current session and keep untouched annotations intact.
+        current_frame = load_annotation_frame(session.csv_path)
+        current_inside, current_outside = split_annotations_by_window(
+            current_frame, start, end
+        )
+
+        added, removed = summarize_segment_changes(current_inside, segment_frame)
+        merged = pd.concat([current_outside, segment_frame], ignore_index=True)
         merged = merged.sort_values("onset").reset_index(drop=True)
-        dropped = len(segment_existing)
+        dropped = len(current_inside)
         save_annotations(session.csv_path, merged)
         self.annotation_frame = merged
         self.status_var.set(f"Saved annotations to {session.csv_path}")
