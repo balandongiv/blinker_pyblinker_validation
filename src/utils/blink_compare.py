@@ -337,8 +337,9 @@ def build_summary_frame(comparisons: Sequence[RecordingComparison]) -> pd.DataFr
         rows.append(
             {
                 "recording_id": item.recording_id,
-                "total_ground_truth": total_ground_truth,
+                 "unique_total":unique_total,
                 "total_detected": total_detected,
+                "total_ground_truth": total_ground_truth,
                 "ground_truth_only": ground_truth_only,
                 "detected_only": detected_only,
                 "share_within_tolerance": share_within_tolerance,
