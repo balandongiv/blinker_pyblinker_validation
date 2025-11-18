@@ -278,11 +278,54 @@ def merge_annotations(
 def split_annotations_by_window(
     frame: pd.DataFrame, start: float, end: float
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Return annotations inside and outside a time window."""
+    """Return clipped inside-window annotations and preserved outside parts."""
 
-    durations = frame["duration"].fillna(0)
-    in_window = (frame["onset"] < end) & ((frame["onset"] + durations) > start)
-    return frame.loc[in_window].copy(), frame.loc[~in_window].copy()
+    inside_rows: list[dict[str, float | str]] = []
+    outside_rows: list[dict[str, float | str]] = []
+
+    for _, row in frame.iterrows():
+        onset = float(row.get("onset", 0.0))
+        duration = float(row.get("duration", 0.0) or 0.0)
+        description = str(row.get("description", ""))
+        offset_end = onset + duration
+
+        overlaps = (onset < end) and (offset_end > start)
+        if not overlaps:
+            outside_rows.append({
+                "onset": onset,
+                "duration": duration,
+                "description": description,
+            })
+            continue
+
+        # Preserve any leading part of the annotation that precedes the window.
+        if onset < start:
+            outside_rows.append({
+                "onset": onset,
+                "duration": max(0.0, start - onset),
+                "description": description,
+            })
+
+        # Capture the portion that falls inside the window.
+        clipped_start = max(onset, start)
+        clipped_end = min(offset_end, end)
+        inside_rows.append({
+            "onset": clipped_start,
+            "duration": max(0.0, clipped_end - clipped_start),
+            "description": description,
+        })
+
+        # Preserve any trailing part that extends beyond the window.
+        if offset_end > end:
+            outside_rows.append({
+                "onset": end,
+                "duration": max(0.0, offset_end - end),
+                "description": description,
+            })
+
+    inside_frame = pd.DataFrame(inside_rows, columns=ANNOTATION_COLUMNS)
+    outside_frame = pd.DataFrame(outside_rows, columns=ANNOTATION_COLUMNS)
+    return inside_frame, outside_frame
 
 
 def summarize_segment_changes(
@@ -582,12 +625,9 @@ class AnnotationApp:
             return
 
         added, removed = summarize_segment_changes(segment_existing, segment_frame)
-        merged, dropped = merge_annotations(
-            pd.concat([segment_existing, outside_segment], ignore_index=True),
-            segment_frame,
-            start,
-            end,
-        )
+        merged = pd.concat([outside_segment, segment_frame], ignore_index=True)
+        merged = merged.sort_values("onset").reset_index(drop=True)
+        dropped = len(segment_existing)
         save_annotations(session.csv_path, merged)
         self.annotation_frame = merged
         self.status_var.set(f"Saved annotations to {session.csv_path}")
