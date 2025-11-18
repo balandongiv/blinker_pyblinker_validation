@@ -35,14 +35,14 @@ from pathlib import Path
 DATASET_ROOT = Path("D:/dataset/murat_2018")
 os.environ.setdefault("MURAT_DATASET_ROOT", str(DATASET_ROOT))
 
-from murat_sequence import (  # noqa: E402 - import depends on env var above
+from murat_sequence import (  # noqa: E402,F401 - imported for optional workflow steps
     step1_prepare_dataset,
     step2_pyblinker,
     step3_run_blinker,
     step4_compare_,
     step5_create_ground_truth,
 )
-from murat_sequence.step5_create_ground_truth import (  # noqa: E402 - import depends on env var above
+from murat_sequence.step5_create_ground_truth import (  # noqa: E402,F401 - re-exported for reuse
     DEFAULT_RECORDING_IDS,
 )
 

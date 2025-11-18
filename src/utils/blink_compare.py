@@ -13,7 +13,6 @@ import numpy as np
 import pandas as pd
 
 import mne
-from pyblinker.utils.evaluation import blink_comparison
 LOGGER = logging.getLogger(__name__)
 
 
@@ -218,32 +217,146 @@ def iter_recordings(root: Path) -> Iterable[Path]:
 
 
 def build_summary_frame(comparisons: Sequence[RecordingComparison]) -> pd.DataFrame:
-    rows: list[dict] = []
-    for item in comparisons:
-        metrics = item.metrics
-        matched = metrics.get("matches_within_tolerance", 0.0)
-        py_only = metrics.get("detected_only", 0.0)
-        blinker_only = metrics.get("ground_truth_only", 0.0)
+    """Compute summary metrics describing alignment quality.
 
-        precision = matched / (matched + py_only) if (matched + py_only) else math.nan
-        recall = matched / (matched + blinker_only) if (matched + blinker_only) else math.nan
+    Metrics are derived directly from ``diff_table`` (typically produced by
+    :func:`pyblinker.utils.evaluation.reporting.make_diff_table`) and include:
+
+    ``total_ground_truth``
+        Number of ground truth events.
+    ``total_detected``
+        Number of detected events.
+    ``ground_truth_only``
+        Ground truth events without a detected counterpart.
+    ``detected_only``
+        Detected events without a ground truth counterpart.
+    ``share_within_tolerance``
+        Count of unique events (detected plus ground truth) participating in
+        amplitude- and overlap-satisfying pairs.
+    ``matches_within_tolerance``
+        Count of unique events belonging to pairs that met the tolerance window
+        but failed at least one amplitude/overlap requirement.
+    ``pairs_outside_tolerance``
+        Count of unique events in pairs whose boundaries exceeded the tolerance
+        window regardless of amplitude/overlap success.
+    ``share_within_tolerance_percent``
+        Percentage of unique events that participate in amplitude- and overlap-
+        satisfying pairs.
+
+    ``diff_table`` must include ``match_category`` and ``within_tolerance``
+    columns describing how each paired event was classified:
+
+    ``"share_within_tolerance"``
+        Assigned when both amplitude and overlap conditions are satisfied for a
+        detected/ground-truth pair. ``within_tolerance`` may be either ``True``
+        or ``False`` depending on whether the start/end boundaries also fall
+        within the tolerance window.
+    ``"matches_within_tolerance"``
+        Assigned to pairs whose start and end indices fall within the tolerance
+        window but fail at least one amplitude/overlap requirement. These pairs
+        are within the boundary window (``within_tolerance=True``) yet are not
+        counted toward ``share_within_tolerance`` because the quality checks did
+        not pass.
+    ``"pairs_outside_tolerance"``
+        Assigned when a paired event violates the tolerance window
+        (``within_tolerance=False``), even if amplitude/overlap conditions are
+        otherwise satisfied.
+
+    The ``within_tolerance`` column is a boolean flag indicating whether both
+    start and end differences for a paired event fall within the configured
+    tolerance. Rows without a detected/ground-truth pairing use ``NaN`` for both
+    ``match_category`` and ``within_tolerance``.
+
+    Example
+    -------
+    Imagine ``tolerance_samples`` is ``1`` with three ground truth blinks
+    (``G1``-``G3``) and three detected blinks (``D1``-``D3``). Suppose ``G1``
+    and ``D1`` overlap and have similar amplitudes, so they receive
+    ``match_category="share_within_tolerance"`` with ``within_tolerance=True``.
+    ``G2`` and ``D2`` overlap but the detected start is two samples early, so
+    they receive ``match_category="pairs_outside_tolerance"`` with
+    ``within_tolerance=False`` even though amplitude checks pass. ``G3`` and
+    ``D3`` align within the tolerance window but the amplitudes differ, leading
+    to ``match_category="matches_within_tolerance"`` with
+    ``within_tolerance=True``. The resulting metrics would be:
+
+    * ``total_ground_truth`` = 3 and ``total_detected`` = 3.
+    * ``ground_truth_only`` = 0 and ``detected_only`` = 0 because all events are
+      paired.
+    * ``share_within_tolerance`` = 2 because only ``G1`` and ``D1`` satisfy both
+      amplitude and overlap checks; ``share_within_tolerance_percent`` is
+      therefore ``2 / 6 * 100`` when measured against the six unique events.
+    * ``matches_within_tolerance`` = 2 for the ``G3``/``D3`` pair whose
+      amplitudes differ despite boundary agreement.
+    * ``pairs_outside_tolerance`` = 2 for the ``G2``/``D2`` pair whose boundaries
+      violate the tolerance window.
+    """
+
+    def _core_metrics(tp: float, fp: float, fn: float) -> tuple[float, float, float, float]:
+        precision = tp / (tp + fp) if (tp + fp) else math.nan
+        recall = tp / (tp + fn) if (tp + fn) else math.nan
         if math.isnan(precision) or math.isnan(recall) or (precision + recall) == 0:
             f1 = math.nan
         else:
             f1 = 2 * precision * recall / (precision + recall)
 
+        accuracy = tp / (tp + fp + fn) if (tp + fp + fn) else math.nan
+        return precision, recall, f1, accuracy
+
+    rows: list[dict] = []
+    for item in comparisons:
+        metrics = item.metrics
+
+        total_ground_truth = metrics.get("total_ground_truth", float(len(item.blinker_events)))
+        total_detected = metrics.get("total_detected", float(len(item.py_events)))
+        ground_truth_only = metrics.get("ground_truth_only", 0.0)
+        detected_only = metrics.get("detected_only", 0.0)
+        share_within_tolerance = metrics.get("share_within_tolerance", 0.0)
+        matches_within_tolerance = metrics.get("matches_within_tolerance", 0.0)
+        pairs_outside_tolerance = metrics.get("pairs_outside_tolerance", 0.0)
+        unique_total = metrics.get("unique_total")
+        if unique_total is None:
+            unique_total = total_ground_truth + total_detected
+
+        share_within_tolerance_percent = (
+            share_within_tolerance / unique_total * 100 if unique_total else math.nan
+        )
+
+        tp_strict = share_within_tolerance
+        tp_lenient = share_within_tolerance + matches_within_tolerance
+        fp = detected_only
+        fn = ground_truth_only
+
+        precision_strict, recall_strict, f1_strict, accuracy_strict = _core_metrics(
+            tp_strict, fp, fn
+        )
+        precision_lenient, recall_lenient, f1_lenient, accuracy_lenient = _core_metrics(
+            tp_lenient, fp, fn
+        )
+
         rows.append(
             {
                 "recording_id": item.recording_id,
-                "py_count": metrics.get("total_detected", float(len(item.py_events))),
-                "blinker_count": metrics.get("total_ground_truth", float(len(item.blinker_events))),
-                "matched": matched,
-                "py_only": py_only,
-                "blinker_only": blinker_only,
-                "pairs_outside_tolerance": metrics.get("pairs_outside_tolerance", math.nan),
-                "precision": precision,
-                "recall": recall,
-                "f1": f1,
+                "total_ground_truth": total_ground_truth,
+                "total_detected": total_detected,
+                "ground_truth_only": ground_truth_only,
+                "detected_only": detected_only,
+                "share_within_tolerance": share_within_tolerance,
+                "matches_within_tolerance": matches_within_tolerance,
+                "pairs_outside_tolerance": pairs_outside_tolerance,
+                "share_within_tolerance_percent": share_within_tolerance_percent,
+                "tp_strict": tp_strict,
+                "tp_lenient": tp_lenient,
+                "fp": fp,
+                "fn": fn,
+                "precision_strict": precision_strict,
+                "recall_strict": recall_strict,
+                "f1_strict": f1_strict,
+                "accuracy_strict": accuracy_strict,
+                "precision_lenient": precision_lenient,
+                "recall_lenient": recall_lenient,
+                "f1_lenient": f1_lenient,
+                "accuracy_lenient": accuracy_lenient,
                 "onset_mae_sec": item.onset_mae_sec,
             }
         )
@@ -258,21 +371,33 @@ def build_overall_summary(summary: pd.DataFrame) -> pd.Series:
     if summary.empty:
         return pd.Series(dtype=float)
 
-    matched_total = summary["matched"].sum(skipna=True)
-    py_only_total = summary["py_only"].sum(skipna=True)
-    blinker_only_total = summary["blinker_only"].sum(skipna=True)
+    tp_strict_total = summary["tp_strict"].sum(skipna=True)
+    tp_lenient_total = summary["tp_lenient"].sum(skipna=True)
+    fp_total = summary["fp"].sum(skipna=True)
+    fn_total = summary["fn"].sum(skipna=True)
 
-    precision_micro = matched_total / (matched_total + py_only_total) if (matched_total + py_only_total) else math.nan
-    recall_micro = matched_total / (matched_total + blinker_only_total) if (matched_total + blinker_only_total) else math.nan
+    def _macro(column: str) -> float:
+        return summary[column].mean(skipna=True)
 
-    if (
-        math.isnan(precision_micro)
-        or math.isnan(recall_micro)
-        or (precision_micro + recall_micro) == 0
-    ):
-        f1_micro = math.nan
-    else:
-        f1_micro = 2 * precision_micro * recall_micro / (precision_micro + recall_micro)
+    def _micro(tp: float) -> tuple[float, float, float, float]:
+        precision = tp / (tp + fp_total) if (tp + fp_total) else math.nan
+        recall = tp / (tp + fn_total) if (tp + fn_total) else math.nan
+        if math.isnan(precision) or math.isnan(recall) or (precision + recall) == 0:
+            f1 = math.nan
+        else:
+            f1 = 2 * precision * recall / (precision + recall)
+        accuracy = tp / (tp + fp_total + fn_total) if (tp + fp_total + fn_total) else math.nan
+        return precision, recall, f1, accuracy
+
+    precision_strict_micro, recall_strict_micro, f1_strict_micro, accuracy_strict_micro = _micro(
+        tp_strict_total
+    )
+    (
+        precision_lenient_micro,
+        recall_lenient_micro,
+        f1_lenient_micro,
+        accuracy_lenient_micro,
+    ) = _micro(tp_lenient_total)
 
     mae_values = summary["onset_mae_sec"].dropna()
     mae_mean = mae_values.mean() if not mae_values.empty else math.nan
@@ -280,20 +405,39 @@ def build_overall_summary(summary: pd.DataFrame) -> pd.Series:
     return pd.Series(
         {
             "recording_count": len(summary),
-            "py_count_total": summary["py_count"].sum(skipna=True),
-            "blinker_count_total": summary["blinker_count"].sum(skipna=True),
-            "matched_total": matched_total,
-            "py_only_total": py_only_total,
-            "blinker_only_total": blinker_only_total,
+            "total_detected_total": summary["total_detected"].sum(skipna=True),
+            "total_ground_truth_total": summary["total_ground_truth"].sum(skipna=True),
+            "share_within_tolerance_total": summary["share_within_tolerance"].sum(
+                skipna=True
+            ),
+            "matches_within_tolerance_total": summary["matches_within_tolerance"].sum(
+                skipna=True
+            ),
             "pairs_outside_tolerance_total": summary[
                 "pairs_outside_tolerance"
             ].sum(skipna=True),
-            "precision_macro": summary["precision"].mean(skipna=True),
-            "recall_macro": summary["recall"].mean(skipna=True),
-            "f1_macro": summary["f1"].mean(skipna=True),
-            "precision_micro": precision_micro,
-            "recall_micro": recall_micro,
-            "f1_micro": f1_micro,
+            "detected_only_total": summary["detected_only"].sum(skipna=True),
+            "ground_truth_only_total": summary["ground_truth_only"].sum(skipna=True),
+            "tp_strict_total": tp_strict_total,
+            "tp_lenient_total": tp_lenient_total,
+            "fp_total": fp_total,
+            "fn_total": fn_total,
+            "precision_strict_macro": _macro("precision_strict"),
+            "recall_strict_macro": _macro("recall_strict"),
+            "f1_strict_macro": _macro("f1_strict"),
+            "accuracy_strict_macro": _macro("accuracy_strict"),
+            "precision_lenient_macro": _macro("precision_lenient"),
+            "recall_lenient_macro": _macro("recall_lenient"),
+            "f1_lenient_macro": _macro("f1_lenient"),
+            "accuracy_lenient_macro": _macro("accuracy_lenient"),
+            "precision_strict_micro": precision_strict_micro,
+            "recall_strict_micro": recall_strict_micro,
+            "f1_strict_micro": f1_strict_micro,
+            "accuracy_strict_micro": accuracy_strict_micro,
+            "precision_lenient_micro": precision_lenient_micro,
+            "recall_lenient_micro": recall_lenient_micro,
+            "f1_lenient_micro": f1_lenient_micro,
+            "accuracy_lenient_micro": accuracy_lenient_micro,
             "onset_mae_sec_mean": mae_mean,
         }
     )
@@ -306,8 +450,12 @@ def render_report(
     overall: pd.Series | None = None,
 ) -> Path:
     lines = ["# murat_2018 PyBlinker vs Blinker comparison", ""]
-    lines.append("| Recording | PyBlinker | Blinker | Matched | Py-only | Blinker-only | Precision | Recall | F1 | MAE (s) |")
-    lines.append("| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |")
+    lines.append(
+        "| Recording | Detected | Ground truth | share_within_tolerance | matches_within_tolerance | Py-only | Blinker-only | Precision (strict) | Recall (strict) | F1 (strict) | Precision (lenient) | Recall (lenient) | F1 (lenient) | MAE (s) |"
+    )
+    lines.append(
+        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"
+    )
 
     for _, row in summary.iterrows():
         def _fmt(value):
@@ -318,16 +466,20 @@ def render_report(
             return str(int(value))
 
         lines.append(
-            "| {recording_id} | {py_count} | {blinker_count} | {matched} | {py_only} | {blinker_only} | {precision} | {recall} | {f1} | {mae} |".format(
+            "| {recording_id} | {py_count} | {blinker_count} | {share} | {matches} | {py_only} | {blinker_only} | {precision_strict} | {recall_strict} | {f1_strict} | {precision_lenient} | {recall_lenient} | {f1_lenient} | {mae} |".format(
                 recording_id=row["recording_id"],
-                py_count=_fmt(row["py_count"]),
-                blinker_count=_fmt(row["blinker_count"]),
-                matched=_fmt(row["matched"]),
-                py_only=_fmt(row["py_only"]),
-                blinker_only=_fmt(row["blinker_only"]),
-                precision=_fmt(row["precision"]),
-                recall=_fmt(row["recall"]),
-                f1=_fmt(row["f1"]),
+                py_count=_fmt(row["total_detected"]),
+                blinker_count=_fmt(row["total_ground_truth"]),
+                share=_fmt(row["share_within_tolerance"]),
+                matches=_fmt(row["matches_within_tolerance"]),
+                py_only=_fmt(row["detected_only"]),
+                blinker_only=_fmt(row["ground_truth_only"]),
+                precision_strict=_fmt(row["precision_strict"]),
+                recall_strict=_fmt(row["recall_strict"]),
+                f1_strict=_fmt(row["f1_strict"]),
+                precision_lenient=_fmt(row["precision_lenient"]),
+                recall_lenient=_fmt(row["recall_lenient"]),
+                f1_lenient=_fmt(row["f1_lenient"]),
                 mae=_fmt(row["onset_mae_sec"]),
             )
         )
@@ -364,41 +516,55 @@ def compare_recordings(
     for recording_dir in iter_recordings(root):
         py_path = recording_dir / "pyblinker_results.pkl"
         blinker_path = recording_dir / "blinker_results.pkl"
-        fif_fname=f"{recording_dir.name}.fif"
+        fif_fname = f"{recording_dir.name}.fif"
 
-
+        if not py_path.exists() or not blinker_path.exists():
+            LOGGER.debug(
+                "Skipping %s because expected pickle files are missing", recording_dir.name,
+            )
+            continue
 
         py_payload = load_pickle(py_path)
         blinker_payload = load_pickle(blinker_path)
 
-        ch=py_payload['metrics']['channel']
-        raw = mne.io.read_raw_fif(recording_dir/ fif_fname, preload=True)
-        signal = raw.get_data(picks=[ch])[0]
+        channel = py_payload["metrics"]["channel"]
+        raw = mne.io.read_raw_fif(recording_dir / fif_fname, preload=True)
+        signal = raw.get_data(picks=[channel])[0]
         py_events, blinker_events, sample_rate = prepare_event_tables(
             py_payload,
             blinker_payload,
         )
 
-        N_PREVIEW_ROWS = 10
-        N_DIFF_ROWS = 20
+        n_preview_rows = 10
+        n_diff_rows = 20
 
-        comparison = blink_comparison.compare_detected_vs_ground_truth(
+        comparison = comparator.compare_detected_vs_ground_truth(
             py_events,
             blinker_events,
             sample_rate,
             tolerance_samples=tolerance_samples,
-            n_preview_rows=N_PREVIEW_ROWS,
-            n_diff_rows=N_DIFF_ROWS,
+            n_preview_rows=n_preview_rows,
+            n_diff_rows=n_diff_rows,
             detected_signal=signal,
+        )
+
+        comparisons.append(
+            RecordingComparison(
+                recording_id=recording_dir.name,
+                py_events=py_events,
+                blinker_events=blinker_events,
+                metrics=comparison.metrics,
+                onset_mae_sec=compute_onset_mae(
+                    comparison.alignments,
+                    sampling_rate_hz=sample_rate,
+                    tolerance_samples=tolerance_samples,
+                ),
             )
+        )
 
-        to_plot=False
+        to_plot = False
         if to_plot:
-            metrics = comparison.metrics
-            diff_table = comparison.diff_table
-            annotations = comparison.annotations
-            raw.set_annotations(annotations)
+            raw.set_annotations(comparison.annotations)
             raw.plot(block=True)
-
 
     return comparisons

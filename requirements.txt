@@ -12,6 +12,7 @@ mne
 
 # Utilities
 gdown
+pyyaml
 pyblinker @ git+https://github.com/pyresearchs/pyblinker.git@main
 
 

@@ -4,16 +4,23 @@ from __future__ import annotations
 
 import argparse
 import logging
+import sys
 from pathlib import Path
 
-from src.utils.blink_compare import (
+# Ensure the repository root (which contains the ``src`` package) is importable when
+# this script is executed directly via ``python murat_sequence/step4_compare_``.
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from src.utils.blink_compare import (  # noqa: E402 - deferred import for path setup
     RecordingComparison,
     build_overall_summary,
     build_summary_frame,
     compare_recordings,
     render_report,
 )
-from src.utils.config_utils import (
+from src.utils.config_utils import (  # noqa: E402 - deferred import for path setup
     DEFAULT_CONFIG_PATH,
     get_path_setting,
     load_config,
