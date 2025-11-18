@@ -3,21 +3,24 @@
 Flowchart-style walkthrough of the GUI logic:
 
 1. Launch and discover FIF files
-   → Look for the provided explicit paths; otherwise search the ``root`` folder
-     for ``*.fif``.
+   → Prefer the default dataset root ``D:\dataset\murat_2018`` and traverse
+     all nested folders for ``*.fif`` files. An explicit ``--root`` or
+     ``--files`` list can override the default search.
    → Populate the list widget; if nothing is found, show an error dialog and
-     exit.
+   → exit.
 
 2. Pick a target recording
    → The user clicks a file in the list; the app derives the companion CSV path
      with the same stem and a ``.csv`` extension.
    → Load the CSV (if it exists) into a normalized dataframe and report the
      current annotation count.
+   → Fetch the last edit timestamp from the CSV (if present) so the info panel
+     can show when annotations were last saved.
 
 3. Inspect metadata
    → Open the FIF header (no preload) to determine total duration.
-   → Update the info panel with recording length and the number of existing
-     annotations.
+   → Update the info panel with recording length, the number of existing
+     annotations, and the last edit time.
 
 4. Choose a time window
    → The "Start (s)" and "End (s)" fields accept numeric inputs.
@@ -31,7 +34,7 @@ Flowchart-style walkthrough of the GUI logic:
 5. Launch the MNE browser
    → Load the FIF with ``preload=True`` and attach current annotations.
    → Crop the raw object to the requested window and open ``.plot`` with a
-     title containing the filename, range, and status.
+     title containing the filename, range, status, and segment times.
    → The plot blocks while the user edits annotations; on close, the updated
      annotations are exported with onsets shifted back to absolute time.
 
@@ -41,6 +44,8 @@ Flowchart-style walkthrough of the GUI logic:
      merges the new ones, and sorts by onset.
    → Before overwriting the main CSV, it writes a timestamped backup to a
      ``backups/`` folder beside the CSV.
+   → A logger writes major events (segments processed, additions/removals,
+     totals) to a history panel and to a file beside the dataset root.
    → The main CSV always reflects the latest global annotation set for the FIF
      file.
 """
@@ -51,14 +56,72 @@ import argparse
 import shutil
 from dataclasses import dataclass
 from datetime import datetime
+import logging
 from pathlib import Path
 from typing import Iterable, Optional
 
 import mne
 import pandas as pd
-from tkinter import END, BOTH, LEFT, RIGHT, TOP, BOTTOM, X, Y, Label, Listbox, Scrollbar, StringVar, Tk, Entry, Frame, Button, messagebox
+from tkinter import (
+    BOTH,
+    BOTTOM,
+    END,
+    LEFT,
+    RIGHT,
+    TOP,
+    X,
+    Y,
+    Button,
+    Entry,
+    Frame,
+    Label,
+    Listbox,
+    Scrollbar,
+    StringVar,
+    Text,
+    Tk,
+    messagebox,
+)
 
 ANNOTATION_COLUMNS = ["onset", "duration", "description"]
+DEFAULT_ROOT = Path(r"D:\\dataset\\murat_2018")
+logger = logging.getLogger(__name__)
+
+
+def configure_logger(log_path: Path) -> None:
+    """Configure a file logger for annotation activity."""
+
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    logger.setLevel(logging.INFO)
+    existing_files = [
+        handler
+        for handler in logger.handlers
+        if isinstance(handler, logging.FileHandler)
+        and Path(getattr(handler, "baseFilename", "")) == log_path
+    ]
+    if not existing_files:
+        file_handler = logging.FileHandler(log_path, encoding="utf-8")
+        file_handler.setFormatter(logging.Formatter("%(asctime)s - %(message)s"))
+        logger.addHandler(file_handler)
+
+
+def read_history(log_path: Path, max_lines: int = 50) -> list[str]:
+    """Return the last ``max_lines`` of the history log if it exists."""
+
+    if not log_path.exists():
+        return []
+    with log_path.open("r", encoding="utf-8") as log_file:
+        lines = log_file.readlines()
+    return [line.rstrip("\n") for line in lines[-max_lines:]]
+
+
+def last_edit_timestamp(csv_path: Path) -> str:
+    """Return the last modification time for ``csv_path`` or ``"None"``."""
+
+    if not csv_path.exists():
+        return "None"
+    modified = datetime.fromtimestamp(csv_path.stat().st_mtime)
+    return modified.strftime("%Y-%m-%d %H:%M:%S")
 
 
 @dataclass
@@ -78,7 +141,7 @@ def find_fif_files(root: Path, provided: Iterable[str] | None = None) -> list[Pa
     if provided:
         paths = [Path(p) for p in provided]
     else:
-        paths = sorted(root.glob("*.fif"))
+        paths = sorted(root.rglob("*.fif"))
     existing = [path for path in paths if path.exists()]
     if not existing:
         raise FileNotFoundError("No FIF files were found in the specified inputs.")
@@ -184,14 +247,15 @@ def backup_existing_csv(csv_path: Path) -> None:
 
 def merge_annotations(
     global_frame: pd.DataFrame, segment_frame: pd.DataFrame, start: float, end: float
-) -> pd.DataFrame:
+) -> tuple[pd.DataFrame, int]:
     """Merge segment annotations into the global set, replacing overlaps."""
 
     durations = global_frame["duration"].fillna(0)
     overlaps = (global_frame["onset"] < end) & ((global_frame["onset"] + durations) > start)
     kept = global_frame.loc[~overlaps]
     merged = pd.concat([kept, segment_frame], ignore_index=True)
-    return merged.sort_values("onset").reset_index(drop=True)
+    merged = merged.sort_values("onset").reset_index(drop=True)
+    return merged, int(overlaps.sum())
 
 
 def launch_browser_and_collect(raw: mne.io.Raw, session: AnnotationSession) -> pd.DataFrame:
@@ -229,6 +293,9 @@ class AnnotationApp:
         self.provided_files = provided_files
         self.annotation_threshold = annotation_threshold
 
+        self.log_path = (self.root_path if self.root_path.exists() else Path.cwd()) / "annotation_ui.log"
+        configure_logger(self.log_path)
+
         self.window = Tk()
         self.window.title("MNE Annotation Helper")
 
@@ -239,6 +306,7 @@ class AnnotationApp:
         self.start_entry: Entry
         self.end_entry: Entry
         self.file_list: Listbox
+        self.history_text: Text
 
         self.annotation_frame = pd.DataFrame(columns=ANNOTATION_COLUMNS)
         self.total_duration: float | None = None
@@ -246,6 +314,7 @@ class AnnotationApp:
 
         self._build_ui()
         self._populate_files()
+        self._refresh_history()
 
     def _build_ui(self) -> None:
         """Construct the Tkinter layout."""
@@ -291,6 +360,17 @@ class AnnotationApp:
             side=BOTTOM, fill=X, padx=8, pady=4
         )
 
+        history_frame = Frame(self.window)
+        history_frame.pack(side=BOTTOM, fill=BOTH, expand=True, padx=8, pady=4)
+        Label(history_frame, text="Recent history:").pack(anchor="w")
+        history_scroll = Scrollbar(history_frame)
+        history_scroll.pack(side=RIGHT, fill=Y)
+        self.history_text = Text(
+            history_frame, height=8, yscrollcommand=history_scroll.set, state="disabled"
+        )
+        self.history_text.pack(side=LEFT, fill=BOTH, expand=True)
+        history_scroll.config(command=self.history_text.yview)
+
     def _populate_files(self) -> None:
         """Populate the listbox with available FIF files."""
 
@@ -307,6 +387,18 @@ class AnnotationApp:
         if len(self.fif_files) == 1:
             self.file_list.selection_set(0)
             self._on_file_select()
+
+    def _refresh_history(self) -> None:
+        """Load history log entries into the UI widget."""
+
+        entries = read_history(self.log_path)
+        self.history_text.configure(state="normal")
+        self.history_text.delete("1.0", END)
+        for entry in entries:
+            self.history_text.insert(END, f"{entry}\n")
+        self.history_text.configure(state="disabled")
+        if entries:
+            self.history_text.see(END)
 
     def _on_file_select(self, event: object | None = None) -> None:  # noqa: ARG002
         """Handle a selection change in the listbox."""
@@ -326,10 +418,18 @@ class AnnotationApp:
         self.info_var.set(
             f"Selected: {self.selected_file.name}\n"
             f"Duration: {self.total_duration:.1f} s\n"
-            f"Annotations: {count}"
+            f"Annotations: {count}\n"
+            f"Last edit: {last_edit_timestamp(csv_path)}"
         )
         self.segment_status_var.set("")
         self.status_var.set("Enter a segment and click Open Segment.")
+        self._log_history(f"Selected file {self.selected_file.name} (annotations: {count})")
+
+    def _log_history(self, message: str) -> None:
+        """Record a history message to the log file and refresh the panel."""
+
+        logger.info(message)
+        self._refresh_history()
 
     def _validate_time_window(self) -> Optional[tuple[float, float]]:
         """Return a validated time window or ``None`` if invalid."""
@@ -403,14 +503,22 @@ class AnnotationApp:
             self.status_var.set("Changes discarded at user request.")
             return
 
-        merged = merge_annotations(self.annotation_frame, segment_frame, start, end)
+        merged, dropped = merge_annotations(self.annotation_frame, segment_frame, start, end)
         save_annotations(session.csv_path, merged)
+        added = len(segment_frame)
         self.annotation_frame = merged
         self.status_var.set(f"Saved annotations to {session.csv_path}")
         self.info_var.set(
             f"Selected: {self.selected_file.name}\n"
             f"Duration: {self.total_duration:.1f} s\n"
-            f"Annotations: {len(self.annotation_frame)}"
+            f"Annotations: {len(self.annotation_frame)}\n"
+            f"Last edit: {last_edit_timestamp(session.csv_path)}"
+        )
+        self._log_history(
+            (
+                f"Saved segment {start:.1f}-{end:.1f} s for {self.selected_file.name} "
+                f"(added: {added}, dropped: {dropped}, total: {len(self.annotation_frame)})"
+            )
         )
 
     def run(self) -> None:
@@ -432,7 +540,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Annotate FIF files in segments.")
     parser.add_argument(
         "--root",
-        default=".",
+        default=str(DEFAULT_ROOT),
         help="Directory to search for FIF files when an explicit list is not provided.",
     )
     parser.add_argument(
