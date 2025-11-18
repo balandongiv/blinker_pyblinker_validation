@@ -24,10 +24,8 @@ Flowchart-style walkthrough of the GUI logic:
 
 4. Choose a time window
    → The "Start (s)" and "End (s)" fields accept numeric inputs.
-   → If both fields are empty **and** the annotation count is below the
-     threshold, the app defaults to the full recording.
-   → If the annotation count exceeds the threshold, the app requires explicit
-     start/end values and will warn until valid numbers are provided.
+   → If both fields are empty, the app defaults to the full recording duration
+     regardless of annotation volume.
    → The app checks whether any annotations overlap the chosen window so the
      plot title can communicate "already annotated" vs "new segment".
 
@@ -113,6 +111,14 @@ def read_history(log_path: Path, max_lines: int = 50) -> list[str]:
     with log_path.open("r", encoding="utf-8") as log_file:
         lines = log_file.readlines()
     return [line.rstrip("\n") for line in lines[-max_lines:]]
+
+
+def latest_file_history(log_path: Path, filename: str, max_entries: int = 3) -> list[str]:
+    """Return the latest history entries that mention a specific file."""
+
+    entries = read_history(log_path, max_lines=200)
+    matched = [line for line in entries if filename in line]
+    return matched[-max_entries:]
 
 
 def last_edit_timestamp(csv_path: Path) -> str:
@@ -303,7 +309,7 @@ class AnnotationApp:
         self.provided_files = provided_files
         self.annotation_threshold = annotation_threshold
 
-        log_dir = (self.root_path if self.root_path.exists() else Path.cwd()) / "logs"
+        log_dir = self.root_path / "logs"
         self.log_path = log_dir / "annotation_ui.log"
         configure_logger(self.log_path)
 
@@ -313,6 +319,7 @@ class AnnotationApp:
         self.status_var = StringVar(value="Select a FIF file to begin.")
         self.info_var = StringVar(value="No file selected.")
         self.segment_status_var = StringVar(value="")
+        self.root_var = StringVar(value=str(self.root_path))
 
         self.start_entry: Entry
         self.end_entry: Entry
@@ -335,6 +342,13 @@ class AnnotationApp:
 
         list_frame = Frame(top_frame)
         list_frame.pack(side=LEFT, fill=BOTH, expand=True)
+
+        root_frame = Frame(list_frame)
+        root_frame.pack(fill=X, pady=(0, 6))
+        Label(root_frame, text="Dataset root:").pack(side=LEFT)
+        root_entry = Entry(root_frame, textvariable=self.root_var, width=50)
+        root_entry.pack(side=LEFT, padx=4, fill=X, expand=True)
+        Button(root_frame, text="Rescan", command=self._populate_files).pack(side=LEFT)
 
         Label(list_frame, text="Available FIF files:").pack(anchor="w")
         scrollbar = Scrollbar(list_frame)
@@ -385,13 +399,14 @@ class AnnotationApp:
     def _populate_files(self) -> None:
         """Populate the listbox with available FIF files."""
 
+        self.root_path = Path(self.root_var.get()).expanduser()
         try:
             self.fif_files = find_fif_files(self.root_path, provided=self.provided_files)
         except FileNotFoundError as exc:
             messagebox.showerror("No FIF files", str(exc))
-            self.window.destroy()
             return
 
+        self.file_list.delete(0, END)
         self.status_var.set(
             f"Found {len(self.fif_files)} FIF files under {self.root_path}"
         )
@@ -417,6 +432,26 @@ class AnnotationApp:
         if entries:
             self.history_text.see(END)
 
+    def _refresh_info_panel(self) -> None:
+        """Update the file metadata panel."""
+
+        if self.selected_file is None or self.total_duration is None:
+            self.info_var.set("No file selected.")
+            return
+
+        csv_path = self.selected_file.with_suffix(".csv")
+        count = len(self.annotation_frame)
+        recent_edits = latest_file_history(self.log_path, self.selected_file.name)
+        history_text = "\n".join(recent_edits) if recent_edits else "None"
+
+        self.info_var.set(
+            f"Selected: {self.selected_file.name}\n"
+            f"Duration: {self.total_duration:.1f} s\n"
+            f"Annotations: {count}\n"
+            f"Last edit: {last_edit_timestamp(csv_path)}\n"
+            f"Recent actions:\n{history_text}"
+        )
+
     def _on_file_select(self, event: object | None = None) -> None:  # noqa: ARG002
         """Handle a selection change in the listbox."""
 
@@ -430,23 +465,20 @@ class AnnotationApp:
 
         raw = mne.io.read_raw_fif(self.selected_file, preload=False)
         self.total_duration = float(raw.times[-1])
-        count = len(self.annotation_frame)
 
-        self.info_var.set(
-            f"Selected: {self.selected_file.name}\n"
-            f"Duration: {self.total_duration:.1f} s\n"
-            f"Annotations: {count}\n"
-            f"Last edit: {last_edit_timestamp(csv_path)}"
-        )
+        self._refresh_info_panel()
         self.segment_status_var.set("")
         self.status_var.set("Enter a segment and click Open Segment.")
-        self._log_history(f"Selected file {self.selected_file.name} (annotations: {count})")
+        self._log_history(
+            f"Selected file {self.selected_file.name} (annotations: {len(self.annotation_frame)})"
+        )
 
     def _log_history(self, message: str) -> None:
         """Record a history message to the log file and refresh the panel."""
 
         logger.info(message)
         self._refresh_history()
+        self._refresh_info_panel()
 
     def _validate_time_window(self) -> Optional[tuple[float, float]]:
         """Return a validated time window or ``None`` if invalid."""
@@ -457,15 +489,7 @@ class AnnotationApp:
 
         start_raw = self.start_entry.get().strip()
         end_raw = self.end_entry.get().strip()
-        require_segment = len(self.annotation_frame) > self.annotation_threshold
-
         if not start_raw and not end_raw:
-            if require_segment:
-                messagebox.showwarning(
-                    "Segment required",
-                    "This file has many annotations; please enter start and end times.",
-                )
-                return None
             return 0.0, float(self.total_duration)
 
         try:
@@ -525,12 +549,7 @@ class AnnotationApp:
         added = len(segment_frame)
         self.annotation_frame = merged
         self.status_var.set(f"Saved annotations to {session.csv_path}")
-        self.info_var.set(
-            f"Selected: {self.selected_file.name}\n"
-            f"Duration: {self.total_duration:.1f} s\n"
-            f"Annotations: {len(self.annotation_frame)}\n"
-            f"Last edit: {last_edit_timestamp(session.csv_path)}"
-        )
+        self._refresh_info_panel()
         self._log_history(
             (
                 f"Saved segment {start:.1f}-{end:.1f} s for {self.selected_file.name} "
