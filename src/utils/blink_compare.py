@@ -554,9 +554,14 @@ def compare_recordings(
             LOGGER.info(
                 "Saving comparison annotations to %s", annotations_path,
             )
-            comparison.annotations.to_data_frame().to_csv(
-                annotations_path, index=False
+            annotations_frame = pd.DataFrame(
+                {
+                    "onset": comparison.annotations.onset,
+                    "duration": comparison.annotations.duration,
+                    "description": comparison.annotations.description,
+                }
             )
+            annotations_frame.to_csv(annotations_path, index=False)
 
         comparisons.append(
             RecordingComparison(
