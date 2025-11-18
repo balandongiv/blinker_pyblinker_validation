@@ -13,7 +13,6 @@ import numpy as np
 import pandas as pd
 
 import mne
-from pyblinker.utils.evaluation import blink_comparison
 LOGGER = logging.getLogger(__name__)
 
 
@@ -364,41 +363,55 @@ def compare_recordings(
     for recording_dir in iter_recordings(root):
         py_path = recording_dir / "pyblinker_results.pkl"
         blinker_path = recording_dir / "blinker_results.pkl"
-        fif_fname=f"{recording_dir.name}.fif"
+        fif_fname = f"{recording_dir.name}.fif"
 
-
+        if not py_path.exists() or not blinker_path.exists():
+            LOGGER.debug(
+                "Skipping %s because expected pickle files are missing", recording_dir.name,
+            )
+            continue
 
         py_payload = load_pickle(py_path)
         blinker_payload = load_pickle(blinker_path)
 
-        ch=py_payload['metrics']['channel']
-        raw = mne.io.read_raw_fif(recording_dir/ fif_fname, preload=True)
-        signal = raw.get_data(picks=[ch])[0]
+        channel = py_payload["metrics"]["channel"]
+        raw = mne.io.read_raw_fif(recording_dir / fif_fname, preload=True)
+        signal = raw.get_data(picks=[channel])[0]
         py_events, blinker_events, sample_rate = prepare_event_tables(
             py_payload,
             blinker_payload,
         )
 
-        N_PREVIEW_ROWS = 10
-        N_DIFF_ROWS = 20
+        n_preview_rows = 10
+        n_diff_rows = 20
 
-        comparison = blink_comparison.compare_detected_vs_ground_truth(
+        comparison = comparator.compare_detected_vs_ground_truth(
             py_events,
             blinker_events,
             sample_rate,
             tolerance_samples=tolerance_samples,
-            n_preview_rows=N_PREVIEW_ROWS,
-            n_diff_rows=N_DIFF_ROWS,
+            n_preview_rows=n_preview_rows,
+            n_diff_rows=n_diff_rows,
             detected_signal=signal,
+        )
+
+        comparisons.append(
+            RecordingComparison(
+                recording_id=recording_dir.name,
+                py_events=py_events,
+                blinker_events=blinker_events,
+                metrics=comparison.metrics,
+                onset_mae_sec=compute_onset_mae(
+                    comparison.alignments,
+                    sampling_rate_hz=sample_rate,
+                    tolerance_samples=tolerance_samples,
+                ),
             )
+        )
 
-        to_plot=False
+        to_plot = False
         if to_plot:
-            metrics = comparison.metrics
-            diff_table = comparison.diff_table
-            annotations = comparison.annotations
-            raw.set_annotations(annotations)
+            raw.set_annotations(comparison.annotations)
             raw.plot(block=True)
-
 
     return comparisons
