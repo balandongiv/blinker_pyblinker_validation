@@ -350,18 +350,17 @@ def summarize_segment_changes(
     return added, removed
 
 
-def launch_browser_and_collect(raw: mne.io.Raw, session: AnnotationSession) -> pd.DataFrame:
+def launch_browser_and_collect(raw_segment: mne.io.Raw, session: AnnotationSession) -> pd.DataFrame:
     """Open the MNE browser for the requested segment and return updated annotations."""
 
-    segment = raw.copy().crop(tmin=session.start, tmax=session.end)
     status = "already annotated" if session.annotated_before else "new segment"
     title = (
         f"{session.fif_path.name} – Segment {session.start:.1f}–{session.end:.1f} s "
         f"– status: {status}"
     )
     print(f"Launching browser with title: {title}")
-    segment.plot(title=title, block=True)
-    return frame_from_annotations(segment.annotations, offset=session.start)
+    raw_segment.plot(title=title, block=True)
+    return frame_from_annotations(raw_segment.annotations, offset=session.start)
 
 
 def save_annotations(csv_path: Path, frame: pd.DataFrame) -> None:
@@ -601,12 +600,16 @@ class AnnotationApp:
             f"Segment {start:.1f}–{end:.1f} s status: {status}"
         )
 
-        segment_existing, outside_segment = split_annotations_by_window(
+        segment_existing, _ = split_annotations_by_window(
             self.annotation_frame, start, end
         )
 
+        local_segment = segment_existing.copy()
+        local_segment["onset"] = (local_segment["onset"] - start).clip(lower=0.0)
+
         raw = mne.io.read_raw_fif(self.selected_file, preload=True)
-        raw.set_annotations(annotations_from_frame(segment_existing))
+        raw.crop(tmin=start, tmax=end)
+        raw.set_annotations(annotations_from_frame(local_segment))
         session = AnnotationSession(
             fif_path=self.selected_file,
             csv_path=self.selected_file.with_suffix(".csv"),
