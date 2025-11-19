@@ -12,7 +12,7 @@ def load_project_metadata() -> tuple[str, str, str]:
     data = tomllib.loads(pyproject_path.read_text(encoding="utf8"))
     project = data.get("project", {})
     name = project.get("name", "blinker-pyblinker-validation")
-    version = project.get("version", "0.1.14")
+    version = project.get("version", "0.1.15")
     description = project.get("description", "")
     return name, version, description
 

@@ -1,4 +1,4 @@
-"""Tkinter GUI for segment-wise MNE annotation management.
+r"""Tkinter GUI for segment-wise MNE annotation management.
 
 Flowchart-style walkthrough of the GUI logic:
 
@@ -52,10 +52,6 @@ Flowchart-style walkthrough of the GUI logic:
 from __future__ import annotations
 
 import argparse
-import shutil
-from dataclasses import dataclass
-from datetime import datetime
-import logging
 from pathlib import Path
 from typing import Iterable, Optional
 
@@ -82,297 +78,13 @@ from tkinter import (
     messagebox,
 )
 
-ANNOTATION_COLUMNS = ["onset", "duration", "description"]
-DEFAULT_ROOT = Path(r"D:\dataset\murat_2018")
-logger = logging.getLogger(__name__)
-
-
-def configure_logger(log_path: Path) -> None:
-    """Configure a file logger for annotation activity."""
-
-    log_path.parent.mkdir(parents=True, exist_ok=True)
-    logger.setLevel(logging.INFO)
-    existing_files = [
-        handler
-        for handler in logger.handlers
-        if isinstance(handler, logging.FileHandler)
-        and Path(getattr(handler, "baseFilename", "")) == log_path
-    ]
-    if not existing_files:
-        file_handler = logging.FileHandler(log_path, encoding="utf-8")
-        file_handler.setFormatter(logging.Formatter("%(asctime)s - %(message)s"))
-        logger.addHandler(file_handler)
-
-
-def read_history(log_path: Path, max_lines: int = 50) -> list[str]:
-    """Return the last ``max_lines`` of the history log if it exists."""
-
-    if not log_path.exists():
-        return []
-    with log_path.open("r", encoding="utf-8") as log_file:
-        lines = log_file.readlines()
-    return [line.rstrip("\n") for line in lines[-max_lines:]]
-
-
-def latest_file_history(log_path: Path, filename: str, max_entries: int = 3) -> list[str]:
-    """Return the latest history entries that mention a specific file."""
-
-    entries = read_history(log_path, max_lines=200)
-    matched = [line for line in entries if filename in line]
-    return matched[-max_entries:]
-
-
-def last_edit_timestamp(csv_path: Path) -> str:
-    """Return the last modification time for ``csv_path`` or ``"None"``."""
-
-    if not csv_path.exists():
-        return "None"
-    modified = datetime.fromtimestamp(csv_path.stat().st_mtime)
-    return modified.strftime("%Y-%m-%d %H:%M:%S")
-
-
-@dataclass
-class AnnotationSession:
-    """Configuration for a single annotation run."""
-
-    fif_path: Path
-    csv_path: Path
-    start: float
-    end: float
-    annotated_before: bool
-
-
-def find_fif_files(root: Path, provided: Iterable[str] | None = None) -> list[Path]:
-    """Return available FIF files from an explicit list or a directory search."""
-
-    if provided:
-        paths = [Path(p) for p in provided]
-    else:
-        if not root.exists():
-            raise FileNotFoundError(
-                f"The root path {root} does not exist; please verify the dataset location."
-            )
-        candidates = list(root.rglob("*.fif")) + list(root.rglob("*.fif.gz"))
-        seen: set[Path] = set()
-        paths: list[Path] = []
-        for path in sorted(candidates):
-            if path not in seen:
-                seen.add(path)
-                paths.append(path)
-    existing = [path for path in paths if path.exists()]
-    if not existing:
-        raise FileNotFoundError("No FIF files were found in the specified inputs.")
-    return existing
-
-
-def load_annotation_frame(csv_path: Path) -> pd.DataFrame:
-    """Load annotations from CSV or return an empty, normalised frame."""
-
-    if not csv_path.exists():
-        return pd.DataFrame(columns=ANNOTATION_COLUMNS)
-    frame = pd.read_csv(csv_path)
-    for column in ANNOTATION_COLUMNS:
-        if column not in frame.columns:
-            frame[column] = pd.NA
-    return frame[ANNOTATION_COLUMNS].copy()
-
-
-def annotations_from_frame(frame: pd.DataFrame) -> mne.Annotations:
-    """Convert a dataframe into an :class:`mne.Annotations` object."""
-
-    if frame.empty:
-        return mne.Annotations(onset=[], duration=[], description=[])
-    return mne.Annotations(
-        onset=frame["onset"].to_numpy(float),
-        duration=frame["duration"].fillna(0).to_numpy(float),
-        description=frame["description"].fillna("").astype(str).tolist(),
-    )
-
-
-def frame_from_annotations(
-    annotations: mne.Annotations, *, base_time: float = 0.0
-) -> pd.DataFrame:
-    """Return a dataframe from ``annotations`` with a time offset applied."""
-
-    return pd.DataFrame(
-        {
-            "onset": annotations.onset + base_time,
-            "duration": annotations.duration,
-            "description": annotations.description,
-        }
-    )
-
-
-def segment_already_annotated(frame: pd.DataFrame, start: float, end: float) -> bool:
-    """Determine whether any annotations overlap a time window."""
-
-    if frame.empty:
-        return False
-    durations = frame["duration"].fillna(0)
-    overlap = (frame["onset"] < end) & ((frame["onset"] + durations) > start)
-    return bool(overlap.any())
-
-
-def prompt_time_segment(total_duration: float, required: bool) -> tuple[float, float]:
-    """Ask the user for a time window in seconds."""
-    raise RuntimeError("prompt_time_segment is not used in the GUI workflow.")
-
-
-def select_file(fif_files: list[Path]) -> Path:
-    """Prompt the user to choose a FIF file from the available options."""
-    raise RuntimeError("select_file is not used in the GUI workflow.")
-
-
-def prepare_session(
-    fif_path: Path, annotation_threshold: int, start: float | None, end: float | None
-) -> AnnotationSession:
-    """Preserved for CLI compatibility; the GUI does not use this helper."""
-
-    csv_path = fif_path.with_suffix(".csv")
-    annotation_frame = load_annotation_frame(csv_path)
-    raw = mne.io.read_raw_fif(fif_path, preload=True)
-    raw.set_annotations(annotations_from_frame(annotation_frame))
-    total_duration = float(raw.times[-1])
-    annotation_count = len(annotation_frame)
-
-    if start is not None and end is not None:
-        segment = (start, end)
-    else:
-        require_segment = annotation_count > annotation_threshold
-        segment = prompt_time_segment(total_duration, required=require_segment)
-
-    start_time, end_time = segment
-    annotated_before = segment_already_annotated(annotation_frame, start_time, end_time)
-    return AnnotationSession(
-        fif_path=fif_path,
-        csv_path=csv_path,
-        start=start_time,
-        end=end_time,
-        annotated_before=annotated_before,
-    )
-
-
-def backup_existing_csv(csv_path: Path) -> None:
-    """Create a timestamped backup of an existing annotation CSV."""
-
-    if not csv_path.exists():
-        return
-    backup_dir = csv_path.parent / "backups"
-    backup_dir.mkdir(exist_ok=True)
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    backup_name = f"{csv_path.stem}_{timestamp}{csv_path.suffix}"
-    shutil.copy2(csv_path, backup_dir / backup_name)
-
-
-def merge_annotations(
-    global_frame: pd.DataFrame, segment_frame: pd.DataFrame, start: float, end: float
-) -> tuple[pd.DataFrame, int]:
-    """Merge a freshly edited segment back into the untouched annotations."""
-
-    durations = global_frame["duration"].fillna(0)
-    overlaps = (global_frame["onset"] < end) & ((global_frame["onset"] + durations) > start)
-    outside_segment = global_frame.loc[~overlaps]
-    merged = pd.concat([outside_segment, segment_frame], ignore_index=True)
-    merged = merged.sort_values("onset").reset_index(drop=True)
-    return merged, int(overlaps.sum())
-
-
-def split_annotations_by_window(
-    frame: pd.DataFrame, start: float, end: float
-) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Return clipped inside-window annotations and preserved outside parts."""
-
-    inside_rows: list[dict[str, float | str]] = []
-    outside_rows: list[dict[str, float | str]] = []
-
-    for _, row in frame.iterrows():
-        onset = float(row.get("onset", 0.0))
-        duration = float(row.get("duration", 0.0) or 0.0)
-        description = str(row.get("description", ""))
-        offset_end = onset + duration
-
-        overlaps = (onset < end) and (offset_end > start)
-        if not overlaps:
-            outside_rows.append({
-                "onset": onset,
-                "duration": duration,
-                "description": description,
-            })
-            continue
-
-        # Preserve any leading part of the annotation that precedes the window.
-        if onset < start:
-            outside_rows.append({
-                "onset": onset,
-                "duration": max(0.0, start - onset),
-                "description": description,
-            })
-
-        # Capture the portion that falls inside the window.
-        clipped_start = max(onset, start)
-        clipped_end = min(offset_end, end)
-        inside_rows.append({
-            "onset": clipped_start,
-            "duration": max(0.0, clipped_end - clipped_start),
-            "description": description,
-        })
-
-        # Preserve any trailing part that extends beyond the window.
-        if offset_end > end:
-            outside_rows.append({
-                "onset": end,
-                "duration": max(0.0, offset_end - end),
-                "description": description,
-            })
-
-    inside_frame = pd.DataFrame(inside_rows, columns=ANNOTATION_COLUMNS)
-    outside_frame = pd.DataFrame(outside_rows, columns=ANNOTATION_COLUMNS)
-    return inside_frame, outside_frame
-
-
-def summarize_segment_changes(
-    original_segment: pd.DataFrame, updated_segment: pd.DataFrame
-) -> tuple[int, int]:
-    """Return counts of added and removed annotations within a segment."""
-
-    def _to_set(df: pd.DataFrame) -> set[tuple[float, float, str]]:
-        return {
-            (
-                round(float(row["onset"]), 6),
-                round(float(row["duration"] or 0), 6),
-                str(row["description"]),
-            )
-            for _, row in df.iterrows()
-        }
-
-    before = _to_set(original_segment)
-    after = _to_set(updated_segment)
-    added = len(after - before)
-    removed = len(before - after)
-    return added, removed
-
-
-def launch_browser_and_collect(raw_segment: mne.io.Raw, session: AnnotationSession) -> pd.DataFrame:
-    """Open the MNE browser for the requested segment and return updated annotations."""
-
-    status = "already annotated" if session.annotated_before else "new segment"
-    title = (
-        f"{session.fif_path.name} – Segment {session.start:.1f}–{session.end:.1f} s "
-        f"– status: {status}"
-    )
-    print(f"Launching browser with title: {title}")
-    raw_segment.plot(title=title, block=True)
-    return frame_from_annotations(
-        raw_segment.annotations, base_time=float(raw_segment.first_time)
-    )
-
-
-def save_annotations(csv_path: Path, frame: pd.DataFrame) -> None:
-    """Persist annotations with a backup of the previous CSV."""
-
-    backup_existing_csv(csv_path)
-    frame.to_csv(csv_path, index=False)
-    print(f"Saved annotations to {csv_path}")
+from .annotation_io import annotations_from_frame, load_annotation_frame, save_annotations
+from .annotation_merge import merge_annotations, split_annotations_by_window, summarize_segment_changes
+from .browser import launch_browser_and_collect
+from .constants import ANNOTATION_COLUMNS, DEFAULT_ROOT
+from .discovery import find_fif_files
+from .logging_utils import configure_logger, last_edit_timestamp, latest_file_history, logger, read_history
+from .session import AnnotationSession
 
 
 class AnnotationApp:
@@ -631,17 +343,13 @@ class AnnotationApp:
             self.status_var.set("Changes discarded at user request.")
             return
 
-        # Reload from disk before merging to ensure we preserve any changes made
-        # outside the current session and keep untouched annotations intact.
         current_frame = load_annotation_frame(session.csv_path)
         current_inside, current_outside = split_annotations_by_window(
             current_frame, start, end
         )
 
         added, removed = summarize_segment_changes(current_inside, segment_frame)
-        merged = pd.concat([current_outside, segment_frame], ignore_index=True)
-        merged = merged.sort_values("onset").reset_index(drop=True)
-        dropped = len(current_inside)
+        merged, dropped = merge_annotations(current_frame, segment_frame, start, end)
         save_annotations(session.csv_path, merged)
         self.annotation_frame = merged
         self.status_var.set(f"Saved annotations to {session.csv_path}")
@@ -659,7 +367,21 @@ class AnnotationApp:
         self.window.mainloop()
 
 
-def run_ui(root: str, annotation_threshold: int, files: Iterable[str] | None, start: float | None, end: float | None) -> None:
+def segment_already_annotated(frame: pd.DataFrame, start: float, end: float) -> bool:
+    """Return ``True`` if any annotation overlaps the requested segment."""
+
+    durations = frame["duration"].fillna(0)
+    overlaps = (frame["onset"] < end) & ((frame["onset"] + durations) > start)
+    return bool(overlaps.any())
+
+
+def run_ui(
+    root: str,
+    annotation_threshold: int,
+    files: Iterable[str] | None,
+    start: float | None,
+    end: float | None,
+) -> None:
     """Entry point retained for CLI parity; not used by the Tkinter GUI."""
 
     del root, annotation_threshold, files, start, end
