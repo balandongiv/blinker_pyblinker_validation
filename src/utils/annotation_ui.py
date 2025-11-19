@@ -189,12 +189,14 @@ def annotations_from_frame(frame: pd.DataFrame) -> mne.Annotations:
     )
 
 
-def frame_from_annotations(annotations: mne.Annotations, offset: float) -> pd.DataFrame:
+def frame_from_annotations(
+    annotations: mne.Annotations, *, base_time: float = 0.0
+) -> pd.DataFrame:
     """Return a dataframe from ``annotations`` with a time offset applied."""
 
     return pd.DataFrame(
         {
-            "onset": annotations.onset + offset,
+            "onset": annotations.onset + base_time,
             "duration": annotations.duration,
             "description": annotations.description,
         }
@@ -360,7 +362,9 @@ def launch_browser_and_collect(raw_segment: mne.io.Raw, session: AnnotationSessi
     )
     print(f"Launching browser with title: {title}")
     raw_segment.plot(title=title, block=True)
-    return frame_from_annotations(raw_segment.annotations, offset=session.start)
+    return frame_from_annotations(
+        raw_segment.annotations, base_time=float(raw_segment.first_time)
+    )
 
 
 def save_annotations(csv_path: Path, frame: pd.DataFrame) -> None:
