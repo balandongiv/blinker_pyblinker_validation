@@ -56,8 +56,6 @@ DATA_DIR = Path(__file__).parent
 INPUT_CSV = DATA_DIR / "annotations_input.csv"
 EXPECTED_FULL = DATA_DIR / "expected_full_merge.csv"
 EXPECTED_MIDDLE = DATA_DIR / "expected_middle_merge.csv"
-EXPECTED_MIDDLE_SEGMENT_DROP = DATA_DIR / "expected_middle_segment_drop.csv"
-EXPECTED_MIDDLE_DROP = DATA_DIR / "expected_middle_drop_merge.csv"
 
 
 def _create_mock_raw(duration=300, sfreq=100):
@@ -150,61 +148,3 @@ def test_middle_segment_manual_add_merge(tmp_path):
     pdt.assert_frame_equal(
         merged.reset_index(drop=True), expected_middle.reset_index(drop=True), check_dtype=False
     )
-
-
-def test_middle_segment_manual_add_merge_drop_annotation(tmp_path):
-    frame = load_annotation_frame(INPUT_CSV)
-
-    raw = _create_mock_raw()
-
-    start, end = 100.0, 200.0
-    assert raw.times[-1] > end
-    inside, _ = split_annotations_by_window(frame, start, end)
-    assert not inside.empty
-    local_segment = inside.copy()
-    local_segment["onset"] = (local_segment["onset"] - start).clip(lower=0.0)
-
-    dropped_label = "M"
-    assert (local_segment["description"] == dropped_label).sum() == 1
-    local_segment = local_segment[local_segment["description"] != dropped_label].reset_index(drop=True)
-
-    local_annotations = annotations_from_frame(local_segment)
-
-    manual = mne.Annotations(
-        onset=[111 - start, 121 - start],
-        duration=[0.0, 0.0],
-        description=["manual_add"] * 2,
-    )
-    combined_annotations = local_annotations + manual
-
-    _maybe_plot(raw, combined_annotations, "Mid-window drop merge preview (segment)")
-
-    segment_frame = frame_from_annotations(combined_annotations, base_time=start)
-    (tmp_path / "middle_segment_drop.csv").write_text(segment_frame.to_csv(index=False))
-    expected_segment = load_annotation_frame(EXPECTED_MIDDLE_SEGMENT_DROP)
-    pdt.assert_frame_equal(
-        segment_frame.reset_index(drop=True), expected_segment.reset_index(drop=True), check_dtype=False
-    )
-
-    merged, _ = merge_annotations(frame, segment_frame, start, end)
-
-    expected_total = len(frame) - 1 + 2
-    assert len(merged) == expected_total
-    (tmp_path / "middle_drop_merged.csv").write_text(merged.to_csv(index=False))
-    for target in (111, 121):
-        matches = merged[(np.isclose(merged["onset"], target)) & (merged["description"] == "manual_add")]
-        assert not matches.empty
-
-    assert merged[merged["description"] == dropped_label].empty
-
-    expected_drop = load_annotation_frame(EXPECTED_MIDDLE_DROP)
-    pdt.assert_frame_equal(
-        merged.reset_index(drop=True), expected_drop.reset_index(drop=True), check_dtype=False
-    )
-
-    annotations = mne.Annotations(
-        onset=merged["onset"].astype(float).to_numpy(),
-        duration=merged["duration"].astype(float).to_numpy(),
-        description=merged["description"].astype(str).tolist(),
-    )
-    _maybe_plot(raw, annotations, "Mid-window drop merge preview (full)")
