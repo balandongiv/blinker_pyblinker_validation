@@ -55,15 +55,15 @@ def split_annotations_by_window(frame: pd.DataFrame, start: float, end: float) -
     return inside_frame, outside_frame
 
 
-def merge_annotations(global_frame: pd.DataFrame, segment_frame: pd.DataFrame, start: float, end: float) -> tuple[pd.DataFrame, int]:
+def merge_annotations(
+    global_frame: pd.DataFrame, segment_frame: pd.DataFrame, start: float, end: float
+) -> tuple[pd.DataFrame, int]:
     """Merge a freshly edited segment back into the untouched annotations."""
 
-    durations = global_frame["duration"].fillna(0)
-    overlaps = (global_frame["onset"] < end) & ((global_frame["onset"] + durations) > start)
-    outside_segment = global_frame.loc[~overlaps]
+    inside_segment, outside_segment = split_annotations_by_window(global_frame, start, end)
     merged = pd.concat([outside_segment, segment_frame], ignore_index=True)
     merged = merged.sort_values("onset").reset_index(drop=True)
-    return merged, int(overlaps.sum())
+    return merged, int(len(inside_segment))
 
 
 def summarize_segment_changes(original_segment: pd.DataFrame, updated_segment: pd.DataFrame) -> tuple[int, int]:

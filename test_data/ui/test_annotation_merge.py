@@ -36,6 +36,7 @@ import os
 import sys
 from pathlib import Path
 
+import pandas as pd
 import pandas.testing as pdt
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -155,9 +156,22 @@ def test_middle_segment_manual_add_merge(tmp_path):
 def test_middle_segment_manual_add_merge_drop_annotation(tmp_path):
     frame = load_annotation_frame(INPUT_CSV)
 
+    start, end = 100.0, 200.0
+
+    boundary_rows = pd.DataFrame(
+        [
+            {"onset": start - 5.0, "duration": 15.0, "description": "boundary_pre"},
+            {"onset": end - 5.0, "duration": 15.0, "description": "boundary_post"},
+        ]
+    )
+    frame = (
+        pd.concat([frame, boundary_rows], ignore_index=True)
+        .sort_values("onset")
+        .reset_index(drop=True)
+    )
+
     raw = _create_mock_raw()
 
-    start, end = 100.0, 200.0
     assert raw.times[-1] > end
     inside, _ = split_annotations_by_window(frame, start, end)
     assert not inside.empty
@@ -188,8 +202,6 @@ def test_middle_segment_manual_add_merge_drop_annotation(tmp_path):
 
     merged, _ = merge_annotations(frame, segment_frame, start, end)
 
-    expected_total = len(frame) - 1 + 2
-    assert len(merged) == expected_total
     (tmp_path / "middle_drop_merged.csv").write_text(merged.to_csv(index=False))
     for target in (111, 121):
         matches = merged[(np.isclose(merged["onset"], target)) & (merged["description"] == "manual_add")]
@@ -198,6 +210,7 @@ def test_middle_segment_manual_add_merge_drop_annotation(tmp_path):
     assert merged[merged["description"] == dropped_label].empty
 
     expected_drop = load_annotation_frame(EXPECTED_MIDDLE_DROP)
+    assert len(merged) == len(expected_drop)
     pdt.assert_frame_equal(
         merged.reset_index(drop=True), expected_drop.reset_index(drop=True), check_dtype=False
     )
