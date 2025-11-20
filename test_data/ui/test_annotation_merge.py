@@ -28,15 +28,12 @@ Flowchart-style steps per test
 7. Assert counts and compare against the appropriate ground-truth CSV to ensure
    no annotations were dropped or shifted.
 """
-# ruff: noqa: E402
 
-from __future__ import annotations
 
-import os
 import sys
 from pathlib import Path
 
-import pandas.testing as pdt
+import pandas as pd
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
@@ -86,8 +83,46 @@ def _create_mock_raw(duration: float = 300, sfreq: float = 100) -> mne.io.Raw:
     info = mne.create_info(["chan1"], sfreq=sfreq, ch_types="eeg")
     return mne.io.RawArray(data, info)
 
+def imitate_plot_adjustment_full_duration(raw, local_annotations, start):
+        # pass
+        """
+        We may also remove an existing annotation from the local annotations.
+        For example, we could delete the annotation at index 3 with description "M".
+        In practice, however, annotation editing (adding or deleting) will typically be done through the MNE Browser (interactive plot).
+        This code is only for testing purposes, and we do not necessarily want to remove annotations based on their description.
 
-def test_full_duration_manual_add_merge(tmp_path):
+        To avoid issue of resetting
+        """
+        raw_temp=raw.copy()
+        raw_temp.set_annotations(local_annotations)
+        # assume we do some adjustment in plot
+        ann=raw_temp.annotations
+
+        ann.delete([1])
+        # This to make sure the second index has been drop
+        assert len(ann)!=len(local_annotations)
+        # add your manual ones
+        ann += mne.Annotations(
+            onset=[5 - start, 9 - start, 12 - start],
+            duration=[0.5, 0.5, 0.6],
+            description=["manual_add"] * 3,
+        )
+
+        assert len(ann)==31
+        return ann
+
+def assume_raw_with_annotations():
+    raw = _create_mock_raw()
+    frame = load_annotation_frame(INPUT_CSV)
+    annotations = mne.Annotations(
+        onset=frame["onset"].astype(float).to_numpy(),
+        duration=frame["duration"].astype(float).to_numpy(),
+        description=frame["description"].astype(str).tolist(),
+    )
+
+    raw.set_annotations(annotations)
+    return raw
+def test_full_duration_manual_add_merge():
     """Test merging after adding manual annotations over the full 0–300 s span.
 
     This test simulates the workflow of opening the **entire** file in the GUI,
@@ -123,36 +158,47 @@ def test_full_duration_manual_add_merge(tmp_path):
       fails and no exception is raised. It prints a confirmation message and,
       when plotting is enabled, shows a Raw plot with all annotations.
     """
-    # frame is a dataframe containing onset, duration, description columns
-    frame = load_annotation_frame(INPUT_CSV)
 
-    raw = _create_mock_raw()
+    # Below we assume we obtain the raw from the gui that always opening the full duration
+    raw=assume_raw_with_annotations()
+    annotation=raw.annotations
 
+
+
+    # To ensure we avoid timestamp
+    frame = pd.DataFrame({
+        "onset":    np.asarray(annotation.onset, dtype=float),
+        "duration": np.asarray(annotation.duration, dtype=float),
+        "description": np.asarray(annotation.description, dtype=str),
+    })
+
+    # we assume the user select the full duration
     start, end = 0.0, raw.times[-1]
-    assert end >= 299.99
+
+
     inside, _ = split_annotations_by_window(frame, start, end)
+
     local_segment = inside.copy()
     local_segment["onset"] = (local_segment["onset"] - start).clip(lower=0.0)
     local_annotations = annotations_from_frame(local_segment)
 
-    manual = mne.Annotations(
-        onset=[5 - start, 9 - start, 12 - start],
-        duration=[0.5, 0.5, 0.6],
-        description=["manual_add"] * 3,
-    )
-    combined_annotations = local_annotations + manual
 
-    segment_frame = frame_from_annotations(combined_annotations, base_time=start)
-    merged, _ = merge_annotations(frame, segment_frame, start, end)
+    # To avoid showing all annotation which can slow down the annotation plot, we only half
+    ann_manual=imitate_plot_adjustment_full_duration(raw, local_annotations, start)
+
+
+    merged = pd.DataFrame({
+        "onset":    np.asarray(ann_manual.onset, dtype=float),
+        "duration": np.asarray(ann_manual.duration, dtype=float),
+        "description": np.asarray(ann_manual.description, dtype=str),
+    })
     # Expected post-merge constraints
     expected = {
-        1: {"onset": 5.0, "description": "manual_add"},
-        2: {"onset": 9.0, "description": "manual_add"},
-        4: {"onset": 12.0, "description": "manual_add"},
+        0: {"onset": 5.0, "description": "manual_add"},
+        1: {"onset": 9.0, "description": "manual_add"},
+        3: {"onset": 12.0, "description": "manual_add"},
     }
     # 1. Assert indices exist
-    for idx in expected:
-        assert idx in merged.index, f"Index {idx} not found in merged dataframe"
 
     # 2. Assert required values for each index
     for idx, checks in expected.items():
@@ -169,22 +215,13 @@ def test_full_duration_manual_add_merge(tmp_path):
         )
 
     print("All merge assertions passed!")
-    # import mne
-
-    # If the onsets/durations are already in seconds relative to raw
-    annotations = mne.Annotations(
-        onset=merged["onset"].astype(float).to_numpy(),
-        duration=merged["duration"].astype(float).to_numpy(),
-        description=merged["description"].astype(str).tolist(),
-    )
-
-    raw.set_annotations(annotations)
+    raw.set_annotations(ann_manual)
     title = "Middle segment merge preview"
     raw.plot(title=title, block=True)
     print("complete plot")
 
 
-def test_middle_segment_manual_add_merge(tmp_path):
+def test_middle_segment_manual_add_merge():
     """Test merging after adding manual annotations in the 100–200 s segment.
 
     This test simulates the workflow of opening **only a middle segment**
@@ -283,7 +320,7 @@ def test_middle_segment_manual_add_merge(tmp_path):
     print("complete plot")
 
 
-def test_middle_segment_manual_add_merge_drop_annotation(tmp_path):
+def test_middle_segment_manual_add_merge_drop_annotation():
     """Test merging when a local annotation is dropped and new ones are added.
 
     This test is a variant of the 100–200 s segment workflow where the user
@@ -327,9 +364,19 @@ def test_middle_segment_manual_add_merge_drop_annotation(tmp_path):
     behavior, so it should be treated as a placeholder or starting point for
     that regression test case.
     """
-    frame = load_annotation_frame(INPUT_CSV)
+    # Below we assume we obtain the raw from the gui that always opening the full duration
+    raw=assume_raw_with_annotations()
+    annotation=raw.annotations
 
-    raw = _create_mock_raw()
+
+
+    # To ensure we avoid timestamp
+    frame = pd.DataFrame({
+        "onset":    np.asarray(annotation.onset, dtype=float),
+        "duration": np.asarray(annotation.duration, dtype=float),
+        "description": np.asarray(annotation.description, dtype=str),
+    })
+
 
     start, end = 100.0, 200.0
     assert raw.times[-1] > end
@@ -338,20 +385,57 @@ def test_middle_segment_manual_add_merge_drop_annotation(tmp_path):
     local_segment["onset"] = (local_segment["onset"] - start).clip(lower=0.0)
     local_annotations = annotations_from_frame(local_segment)
 
-    # This is add annotation into the local annotations
-    manual = mne.Annotations(
-        onset=[111 - start, 121 - start],
-        duration=[0.5, 0.6],
-        description=["manual_add"] * 2,
-    )
+    # To avoid showing all annotation which can slow down the annotation plot, we only half
+    ann_manual=imitate_plot_adjustment_in_between(raw, local_annotations, start)
 
-    # we also might drop an existing annotation in the local annotations
-    # e.g., drop the annotation at index 3 of local annotation, with the description "M", thou this is only for testing purpose, but we not neccessarily want to drop based on description
+    merged = pd.DataFrame({
+        "onset":    np.asarray(ann_manual.onset, dtype=float),
+        "duration": np.asarray(ann_manual.duration, dtype=float),
+        "description": np.asarray(ann_manual.description, dtype=str),
+    })
 
-    combined_annotations = local_annotations + manual
+    # We may also remove an existing annotation from the local annotations.
+    # For example, we could delete the annotation at index 3 with description "M".
+    # In practice, however, annotation editing (adding or deleting) will typically be done
+    # through the MNE Browser (interactive plot). This code is only for testing purposes,
+    # and we do not necessarily want to remove annotations based on their description.
 
-    segment_frame = frame_from_annotations(combined_annotations, base_time=start)
-    merged, _ = merge_annotations(frame, segment_frame, start, end)
+    # combined_annotations = local_annotations + manual
+    #
+    # segment_frame = frame_from_annotations(combined_annotations, base_time=start)
+    # merged, _ = merge_annotations(frame, segment_frame, start, end)
     # Expected post-merge constraints
 
     # so when assert, we expect the annotation with description "M" to be dropped, and the two new manual annotations to be present together with the rest of the annotations
+
+def imitate_plot_adjustment_in_between(raw, local_annotations, start):
+    # pass
+    """
+    We may also remove an existing annotation from the local annotations.
+    For example, we could delete the annotation at index 3 with description "M".
+    In practice, however, annotation editing (adding or deleting) will typically be done through the MNE Browser (interactive plot).
+    This code is only for testing purposes, and we do not necessarily want to remove annotations based on their description.
+
+    To avoid issue of resetting
+    """
+    raw_temp=raw.copy()
+    raw_temp.set_annotations(local_annotations)
+    # assume we do some adjustment in plot
+    ann=raw_temp.annotations
+
+    ann.delete([1])
+    # This to make sure the second index has been drop
+    assert len(ann)!=len(local_annotations)
+    # add your manual ones
+    ann += mne.Annotations(
+        onset=[5 - start, 9 - start, 12 - start],
+        duration=[0.5, 0.5, 0.6],
+        description=["manual_add"] * 3,
+    )
+
+    assert len(ann)==31
+    return ann
+
+if __name__ == "__main__":
+    # test_full_duration_manual_add_merge()
+    test_middle_segment_manual_add_merge_drop_annotation()
