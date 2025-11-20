@@ -7,51 +7,99 @@ import pandas as pd
 from .constants import ANNOTATION_COLUMNS
 
 
-def split_annotations_by_window(frame: pd.DataFrame, start: float, end: float) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Return clipped inside-window annotations and preserved outside parts."""
+import pandas as pd
+import numpy as np
 
-    inside_rows: list[dict[str, float | str]] = []
-    outside_rows: list[dict[str, float | str]] = []
+def split_annotations_by_window(df: pd.DataFrame, start: float, end: float):
+    """
+    Split annotation rows into two DataFrames (`inside_frame` and `outside_frame`)
+    based on whether each annotation overlaps the given time window.
 
-    for _, row in frame.iterrows():
-        onset = float(row.get("onset", 0.0))
-        duration = float(row.get("duration", 0.0) or 0.0)
-        description = str(row.get("description", ""))
-        offset_end = onset + duration
+    Each row is assumed to represent a time segment with:
+      - `onset`      : start time of the annotation
+      - `duration`   : length of the annotation
+      - `description`: annotation label (not required for computation)
 
-        overlaps = (onset < end) and (offset_end > start)
-        if not overlaps:
-            outside_rows.append({
-                "onset": onset,
-                "duration": duration,
-                "description": description,
-            })
-            continue
+    The time interval of an annotation is:
 
-        if onset < start:
-            outside_rows.append({
-                "onset": onset,
-                "duration": max(0.0, start - onset),
-                "description": description,
-            })
+        [onset, onset + duration]
 
-        clipped_start = max(onset, start)
-        clipped_end = min(offset_end, end)
-        inside_rows.append({
-            "onset": clipped_start,
-            "duration": max(0.0, clipped_end - clipped_start),
-            "description": description,
-        })
+    A segment is labeled **inside** if it **overlaps** the window:
 
-        if offset_end > end:
-            outside_rows.append({
-                "onset": end,
-                "duration": max(0.0, offset_end - end),
-                "description": description,
-            })
+        [start, end]
 
-    inside_frame = pd.DataFrame(inside_rows, columns=ANNOTATION_COLUMNS)
-    outside_frame = pd.DataFrame(outside_rows, columns=ANNOTATION_COLUMNS)
+    i.e. when:
+
+        onset + duration >= start  AND  onset <= end
+
+    (inclusive). Otherwise it belongs in the **outside** frame.
+
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        Must contain `onset` and `duration` columns.
+    start : float
+        Window start time in seconds.
+    end : float
+        Window end time in seconds.
+
+    Returns
+    -------
+    inside_frame : pandas.DataFrame
+        Rows whose intervals overlap the window.
+    outside_frame : pandas.DataFrame
+        Rows with no overlap.
+
+    Examples
+    --------
+    Example 1
+    ---------
+    >>> data = {
+    ...     "onset": [10.0, 20.0, 18.9],
+    ...     "duration": [0.3, 0.3, 1.0],
+    ...     "description": ["A", "B", "C"],
+    ... }
+    >>> df = pd.DataFrame(data)
+    >>> inside, outside = split_annotations_by_window(df, start=0, end=19)
+    >>> inside
+       onset  duration description
+    0   10.0       0.3           A
+    2   18.9       1.0           C
+    >>> outside
+       onset  duration description
+    1   20.0       0.3           B
+
+    Example 2 (requested)
+    ---------------------
+    >>> data = {
+    ...     "onset": [10, 11, 14.1, 20, 30],
+    ...     "duration": [0.3, 0.3, 0.3, 0.3, 0.3],
+    ...     "description": ["A", "B", "C", "D", "E"],
+    ... }
+    >>> df = pd.DataFrame(data)
+    >>> inside, outside = split_annotations_by_window(df, start=14, end=15)
+    >>> inside
+       onset  duration description
+    2   14.1       0.3           C
+    >>> outside
+       onset  duration description
+    0   10.0       0.3           A
+    1   11.0       0.3           B
+    3   20.0       0.3           D
+    4   30.0       0.3           E
+    """
+    df_out = df.copy()
+
+    onset = df_out["onset"].to_numpy()
+    duration = df_out["duration"].to_numpy()
+    segment_end = onset + duration
+
+    # Any overlap between [onset, segment_end] and [start, end]
+    inside_mask = (segment_end >= start) & (onset <= end)
+
+    inside_frame = df_out.loc[inside_mask].reset_index(drop=True)
+    outside_frame = df_out.loc[~inside_mask].reset_index(drop=True)
+
     return inside_frame, outside_frame
 
 
