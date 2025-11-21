@@ -85,8 +85,17 @@ from .constants import ANNOTATION_COLUMNS, DEFAULT_ROOT
 from .discovery import find_fif_files
 from .logging_utils import configure_logger, last_edit_timestamp, latest_file_history, logger, read_history
 from .session import AnnotationSession
+import numpy as np
+def annotations_to_frame(annotations: mne.Annotations) -> pd.DataFrame:
+    """Convert an :class:`mne.Annotations` instance to a DataFrame."""
 
-
+    return pd.DataFrame(
+        {
+                "onset": np.asarray(annotations.onset, dtype=float),
+                "duration": np.asarray(annotations.duration, dtype=float),
+                "description": np.asarray(annotations.description, dtype=str),
+                }
+        )
 class AnnotationApp:
     """Tkinter GUI controller for annotation management."""
 
@@ -316,26 +325,43 @@ class AnnotationApp:
             f"Segment {start:.1f}–{end:.1f} s status: {status}"
         )
 
-        segment_existing, _ = split_annotations_by_window(
-            self.annotation_frame, start, end
-        )
+        annotations = mne.Annotations(
+            onset=self.annotation_frame["onset"].astype(float).to_numpy(),
+            duration=self.annotation_frame["duration"].fillna(0).astype(float).to_numpy(),
+            description=self.annotation_frame["description"].fillna("").astype(str).tolist(),
+            )
 
-        local_segment = segment_existing.copy()
-        local_segment["onset"] = (local_segment["onset"] - start).clip(lower=0.0)
-
-        raw = mne.io.read_raw_fif(self.selected_file, preload=True)
-        raw.crop(tmin=start, tmax=end)
-        raw.set_annotations(annotations_from_frame(local_segment))
         session = AnnotationSession(
             fif_path=self.selected_file,
             csv_path=self.selected_file.with_suffix(".csv"),
             start=start,
             end=end,
             annotated_before=annotated_before,
+            )
+
+
+        raw = mne.io.read_raw_fif(self.selected_file, preload=True)
+        raw.set_annotations(annotations)
+        frame = annotations_to_frame(raw.annotations)
+        inside, outside = split_annotations_by_window(frame, start, end)
+
+        ann_inside = mne.Annotations(
+            onset=inside["onset"].astype(float).to_numpy(),
+            duration=inside["duration"].astype(float).to_numpy(),
+            description=inside["description"].astype(str).tolist(),
+            )
+
+        ann_manual = launch_browser_and_collect(raw, ann_inside,session,start)
+
+
+        merged = annotations_to_frame(ann_manual)
+        merged = (
+                pd.concat([merged, outside], ignore_index=True)
+                .sort_values("onset")
+                .reset_index(drop=True)
         )
-
-        segment_frame = launch_browser_and_collect(raw, session)
-
+        annot_merged = annotations_from_frame(merged)
+        raw.set_annotations(annot_merged)
         if not messagebox.askyesno(
             "Save annotations",
             "Merge and save these annotations to the CSV?",
@@ -343,23 +369,25 @@ class AnnotationApp:
             self.status_var.set("Changes discarded at user request.")
             return
 
-        current_frame = load_annotation_frame(session.csv_path)
-        current_inside, current_outside = split_annotations_by_window(
-            current_frame, start, end
-        )
+        # Do a brute for comparison, by comparing the column onset, whether there value changes between ann_inside and ann_manual
+        # meaning, get statistic how many has been added, removed or changed. The ann_inside is the original annotations, ann_manual is the modified annotations
 
-        added, removed = summarize_segment_changes(current_inside, segment_frame)
-        merged, dropped = merge_annotations(current_frame, segment_frame, start, end)
+
+
+
         save_annotations(session.csv_path, merged)
-        self.annotation_frame = merged
+        #
+        # added, removed = summarize_segment_changes(current_inside, segment_frame)
+        # merged, dropped = merge_annotations(current_frame, segment_frame, start, end)
+        # self.annotation_frame = merged
         self.status_var.set(f"Saved annotations to {session.csv_path}")
         self._refresh_info_panel()
-        self._log_history(
-            (
-                f"Saved segment {start:.1f}-{end:.1f} s for {self.selected_file.name} "
-                f"(added: {added}, removed: {removed}, dropped: {dropped}, total: {len(self.annotation_frame)})"
-            )
-        )
+        # self._log_history(
+        #     (
+        #         f"Saved segment {start:.1f}-{end:.1f} s for {self.selected_file.name} "
+        #         f"(added: {added}, removed: {removed}, dropped: {dropped}, total: {len(self.annotation_frame)})"
+        #     )
+        # )
 
     def run(self) -> None:
         """Start the Tkinter main loop."""

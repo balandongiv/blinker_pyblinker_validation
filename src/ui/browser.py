@@ -9,7 +9,11 @@ from .annotation_io import frame_from_annotations
 from .session import AnnotationSession
 
 
-def launch_browser_and_collect(raw_segment: mne.io.Raw, session: AnnotationSession) -> pd.DataFrame:
+def launch_browser_and_collect(   raw: mne.io.Raw,
+                                  local_annotations: mne.Annotations,
+                                  session: AnnotationSession,
+                                  start: float
+                                   ) -> mne.Annotations:
     """Open the MNE browser and return updated annotations aligned to global time."""
 
     status = "already annotated" if session.annotated_before else "new segment"
@@ -18,5 +22,10 @@ def launch_browser_and_collect(raw_segment: mne.io.Raw, session: AnnotationSessi
         f"– status: {status}"
     )
     print(f"Launching browser with title: {title}")
-    raw_segment.plot(title=title, block=True)
-    return frame_from_annotations(raw_segment.annotations, base_time=float(session.start))
+
+
+    raw_segment = raw.copy()
+    raw_segment.set_annotations(local_annotations)
+    raw_segment.plot(title=title, block=True,start=start)
+    ann=raw_segment.annotations
+    return ann

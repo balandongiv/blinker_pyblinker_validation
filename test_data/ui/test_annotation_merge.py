@@ -49,7 +49,7 @@ EXPECTED_MIDDLE = DATA_DIR / "expected_middle_merge.csv"
 PLOT_ENABLED = os.environ.get("ANNOTATION_TEST_PLOT") == "1"
 
 
-def imitate_plot_adjustment_full_duration(
+def launch_browser_and_collect_imitate_full_duration(
     raw: mne.io.Raw, local_annotations: mne.Annotations, start: float
 ) -> mne.Annotations:
     """Imitate in-browser edits for the full-duration window.
@@ -77,7 +77,7 @@ def imitate_plot_adjustment_full_duration(
     return ann
 
 
-def imitate_plot_adjustment_in_between(
+def launch_browser_and_collect_imitate_plot_in_between(
     raw: mne.io.Raw, local_annotations: mne.Annotations, start: float
 ) -> mne.Annotations:
     """Imitate in-browser edits for a middle segment.
@@ -154,7 +154,7 @@ class AnnotationMergeTestCase(unittest.TestCase):
         local_segment["onset"] = (local_segment["onset"] - start).clip(lower=0.0)
         local_annotations = annotations_from_frame(local_segment)
 
-        ann_manual = imitate_plot_adjustment_full_duration(
+        ann_manual = launch_browser_and_collect_imitate_full_duration(
             raw, local_annotations, start
         )
         merged = annotations_to_frame(ann_manual)
@@ -209,7 +209,7 @@ class AnnotationMergeTestCase(unittest.TestCase):
             description=inside["description"].astype(str).tolist(),
         )
 
-        ann_manual = imitate_plot_adjustment_in_between(raw, ann_inside, start)
+        ann_manual = launch_browser_and_collect_imitate_plot_in_between(raw, ann_inside, start)
         merged = annotations_to_frame(ann_manual)
         merged = (
             pd.concat([merged, outside], ignore_index=True)
