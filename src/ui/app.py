@@ -459,11 +459,19 @@ class AnnotationApp:
         raw.set_annotations(annot_merged)
         if not messagebox.askyesno(
             "Save annotations",
-            "Merge and save these annotations to the CSV?",
+            (
+                "Merge and save these annotations to the CSV?\n"
+                "Yes: Save the latest changes to the CSV.\n"
+                "No: Keep the existing CSV unchanged for now (you will be asked to confirm discarding)."
+            ),
         ):
             discard = messagebox.askyesno(
                 "Discard changes?",
-                "You have made changes to these annotations. Discard them without saving?",
+                (
+                    "You have made changes to these annotations. Discard them without saving?\n"
+                    "Yes: No changes will be made to the CSV.\n"
+                    "No: The latest changes will be saved to the CSV."
+                ),
             )
             if discard:
                 self.status_var.set("Changes discarded at user request.")
