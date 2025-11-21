@@ -40,8 +40,7 @@ import pandas as pd
 
 from src.test_helper import annotations_to_frame, load_raw_with_annotations
 from src.ui.annotation_io import annotations_from_frame
-from src.ui.app import filter_annotations_by_description
-from src.ui.annotation_merge import split_annotations_by_window
+from src.ui.segment_utils import merge_updated_annotations, prepare_annotations_for_window
 
 DATA_DIR = Path(__file__).parent
 INPUT_CSV = DATA_DIR / "annotations_input.csv"
@@ -149,17 +148,14 @@ class AnnotationMergeTestCase(unittest.TestCase):
         end = raw.times[-1] if end is None else end
 
         frame = annotations_to_frame(raw.annotations)
-        inside, outside = split_annotations_by_window(frame, start, end)
-
-        local_segment = inside.copy()
-        local_segment["onset"] = (local_segment["onset"] - start).clip(lower=0.0)
-        local_annotations = annotations_from_frame(local_segment)
+        local_annotations, inside, outside, _ = prepare_annotations_for_window(
+            frame, start, end, align_to_start=True
+        )
 
         ann_manual = launch_browser_and_collect_imitate_full_duration(
             raw, local_annotations, start
         )
-        merged = annotations_to_frame(ann_manual)
-        merged = pd.concat([merged, outside], ignore_index=True)
+        merged = merge_updated_annotations(ann_manual, outside)
         annot_combine = annotations_from_frame(merged)
 
         expected_full = pd.read_csv(EXPECTED_FULL)
@@ -202,21 +198,12 @@ class AnnotationMergeTestCase(unittest.TestCase):
         self.assertGreater(raw.times[-1], end)
 
         frame = annotations_to_frame(raw.annotations)
-        inside, outside = split_annotations_by_window(frame, start, end)
-
-        ann_inside = mne.Annotations(
-            onset=inside["onset"].astype(float).to_numpy(),
-            duration=inside["duration"].astype(float).to_numpy(),
-            description=inside["description"].astype(str).tolist(),
+        ann_inside, inside, outside, _ = prepare_annotations_for_window(
+            frame, start, end
         )
 
         ann_manual = launch_browser_and_collect_imitate_plot_in_between(raw, ann_inside, start)
-        merged = annotations_to_frame(ann_manual)
-        merged = (
-            pd.concat([merged, outside], ignore_index=True)
-            .sort_values("onset")
-            .reset_index(drop=True)
-        )
+        merged = merge_updated_annotations(ann_manual, outside)
         annot_combine = annotations_from_frame(merged)
 
         expected_middle = pd.read_csv(EXPECTED_MIDDLE)
@@ -238,17 +225,11 @@ class AnnotationMergeTestCase(unittest.TestCase):
 
         raw = load_raw_with_annotations(INPUT_CSV)
         frame = annotations_to_frame(raw.annotations)
-        inside, outside = split_annotations_by_window(frame, start, end)
-
-        kept, filtered = filter_annotations_by_description(inside, {"K"})
+        ann_inside, kept, outside, filtered = prepare_annotations_for_window(
+            frame, start, end, {"K"}
+        )
         self.assertTrue(len(filtered) >= 1)
         self.assertTrue((filtered["description"] == "K").all())
-
-        ann_inside = mne.Annotations(
-            onset=kept["onset"].astype(float).to_numpy(),
-            duration=kept["duration"].astype(float).to_numpy(),
-            description=kept["description"].astype(str).tolist(),
-        )
 
         raw_temp = raw.copy()
         raw_temp.set_annotations(ann_inside)
@@ -258,11 +239,7 @@ class AnnotationMergeTestCase(unittest.TestCase):
         )
 
         updated_inside = annotations_to_frame(ann_manual)
-        merged = (
-            pd.concat([updated_inside, outside], ignore_index=True)
-            .sort_values("onset")
-            .reset_index(drop=True)
-        )
+        merged = merge_updated_annotations(updated_inside, outside)
 
         self.assertIn("manual_add", merged["description"].values)
         self.assertNotIn("K", merged["description"].values)

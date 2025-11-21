@@ -75,18 +75,23 @@ from tkinter import (
     StringVar,
     Text,
     Tk,
+    filedialog,
     messagebox,
 )
 
 from src.utils.annotations import annotations_to_frame, summarize_annotation_changes
 
 from .annotation_io import annotations_from_frame, load_annotation_frame, save_annotations
-from .annotation_merge import split_annotations_by_window
 from .browser import launch_browser_and_collect
 from .constants import ANNOTATION_COLUMNS, DEFAULT_ROOT
 from .discovery import find_fif_files
 from .logging_utils import configure_logger, last_edit_timestamp, latest_file_history, logger, read_history
 from .session import AnnotationSession
+from .segment_utils import (
+    merge_updated_annotations,
+    prepare_annotations_for_window,
+    segment_already_annotated,
+)
 
 class AnnotationApp:
     """Tkinter GUI controller for annotation management."""
@@ -141,6 +146,7 @@ class AnnotationApp:
         Label(root_frame, text="Dataset root:").pack(side=LEFT)
         root_entry = Entry(root_frame, textvariable=self.root_var, width=50)
         root_entry.pack(side=LEFT, padx=4, fill=X, expand=True)
+        Button(root_frame, text="Browse", command=self._choose_root).pack(side=LEFT, padx=(0, 4))
         Button(root_frame, text="Rescan", command=self._populate_files).pack(side=LEFT)
 
         Label(list_frame, text="Available FIF files:").pack(anchor="w")
@@ -290,6 +296,16 @@ class AnnotationApp:
         self._refresh_history()
         self._refresh_info_panel()
 
+    def _choose_root(self) -> None:
+        """Open a folder chooser to set the dataset root before rescanning."""
+
+        selection = filedialog.askdirectory(initialdir=str(self.root_path))
+        if not selection:
+            return
+
+        self.root_var.set(selection)
+        self._populate_files()
+
     def _validate_time_window(self) -> Optional[tuple[float, float]]:
         """Return a validated time window or ``None`` if invalid."""
 
@@ -383,27 +399,17 @@ class AnnotationApp:
         raw = mne.io.read_raw_fif(self.selected_file, preload=True)
         raw.set_annotations(annotations)
         frame = annotations_to_frame(raw.annotations)
-        inside, outside = split_annotations_by_window(frame, start, end)
-
         skip_labels = self._selected_labels_to_skip()
-        inside, _ = filter_annotations_by_description(inside, skip_labels)
-
-        ann_inside = mne.Annotations(
-            onset=inside["onset"].astype(float).to_numpy(),
-            duration=inside["duration"].astype(float).to_numpy(),
-            description=inside["description"].astype(str).tolist(),
-            )
+        ann_inside, inside, outside, _ = prepare_annotations_for_window(
+            frame, start, end, skip_labels
+        )
 
         ann_manual = launch_browser_and_collect(raw, ann_inside, session, start)
 
         updated_inside = annotations_to_frame(ann_manual)
         change_summary = summarize_annotation_changes(inside, updated_inside)
 
-        merged = (
-            pd.concat([updated_inside, outside], ignore_index=True)
-            .sort_values("onset")
-            .reset_index(drop=True)
-        )
+        merged = merge_updated_annotations(updated_inside, outside)
         annot_merged = annotations_from_frame(merged)
         raw.set_annotations(annot_merged)
         if not messagebox.askyesno(
@@ -436,28 +442,6 @@ class AnnotationApp:
         """Start the Tkinter main loop."""
 
         self.window.mainloop()
-
-
-def filter_annotations_by_description(
-    frame: pd.DataFrame, skip_labels: Set[str]
-) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Split annotations into those kept for plotting and those filtered out."""
-
-    if not skip_labels:
-        return frame, frame.iloc[0:0]
-
-    mask = frame["description"].isin(skip_labels)
-    filtered = frame[mask]
-    kept = frame[~mask]
-    return kept, filtered
-
-
-def segment_already_annotated(frame: pd.DataFrame, start: float, end: float) -> bool:
-    """Return ``True`` if any annotation overlaps the requested segment."""
-
-    durations = frame["duration"].fillna(0)
-    overlaps = (frame["onset"] < end) & ((frame["onset"] + durations) > start)
-    return bool(overlaps.any())
 
 
 def run_ui(
