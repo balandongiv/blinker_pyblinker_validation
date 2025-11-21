@@ -78,24 +78,16 @@ from tkinter import (
     messagebox,
 )
 
+from src.utils.annotations import annotations_to_frame, summarize_annotation_changes
+
 from .annotation_io import annotations_from_frame, load_annotation_frame, save_annotations
-from .annotation_merge import merge_annotations, split_annotations_by_window, summarize_segment_changes
+from .annotation_merge import split_annotations_by_window
 from .browser import launch_browser_and_collect
 from .constants import ANNOTATION_COLUMNS, DEFAULT_ROOT
 from .discovery import find_fif_files
 from .logging_utils import configure_logger, last_edit_timestamp, latest_file_history, logger, read_history
 from .session import AnnotationSession
-import numpy as np
-def annotations_to_frame(annotations: mne.Annotations) -> pd.DataFrame:
-    """Convert an :class:`mne.Annotations` instance to a DataFrame."""
 
-    return pd.DataFrame(
-        {
-                "onset": np.asarray(annotations.onset, dtype=float),
-                "duration": np.asarray(annotations.duration, dtype=float),
-                "description": np.asarray(annotations.description, dtype=str),
-                }
-        )
 class AnnotationApp:
     """Tkinter GUI controller for annotation management."""
 
@@ -351,14 +343,15 @@ class AnnotationApp:
             description=inside["description"].astype(str).tolist(),
             )
 
-        ann_manual = launch_browser_and_collect(raw, ann_inside,session,start)
+        ann_manual = launch_browser_and_collect(raw, ann_inside, session, start)
 
+        updated_inside = annotations_to_frame(ann_manual)
+        change_summary = summarize_annotation_changes(inside, updated_inside)
 
-        merged = annotations_to_frame(ann_manual)
         merged = (
-                pd.concat([merged, outside], ignore_index=True)
-                .sort_values("onset")
-                .reset_index(drop=True)
+            pd.concat([updated_inside, outside], ignore_index=True)
+            .sort_values("onset")
+            .reset_index(drop=True)
         )
         annot_merged = annotations_from_frame(merged)
         raw.set_annotations(annot_merged)
@@ -369,25 +362,23 @@ class AnnotationApp:
             self.status_var.set("Changes discarded at user request.")
             return
 
-        # Do a brute for comparison, by comparing the column onset, whether there value changes between ann_inside and ann_manual
-        # meaning, get statistic how many has been added, removed or changed. The ann_inside is the original annotations, ann_manual is the modified annotations
-
-
-
-
         save_annotations(session.csv_path, merged)
-        #
-        # added, removed = summarize_segment_changes(current_inside, segment_frame)
-        # merged, dropped = merge_annotations(current_frame, segment_frame, start, end)
-        # self.annotation_frame = merged
-        self.status_var.set(f"Saved annotations to {session.csv_path}")
-        self._refresh_info_panel()
-        # self._log_history(
-        #     (
-        #         f"Saved segment {start:.1f}-{end:.1f} s for {self.selected_file.name} "
-        #         f"(added: {added}, removed: {removed}, dropped: {dropped}, total: {len(self.annotation_frame)})"
-        #     )
-        # )
+
+        self.annotation_frame = merged
+        self.status_var.set(
+            (
+                f"Saved annotations to {session.csv_path} "
+                f"(added: {change_summary.added}, removed: {change_summary.removed}, "
+                f"changed: {change_summary.changed})"
+            )
+        )
+        self._log_history(
+            (
+                f"Saved segment {start:.1f}-{end:.1f} s for {self.selected_file.name} "
+                f"(added: {change_summary.added}, removed: {change_summary.removed}, changed: {change_summary.changed}, "
+                f"total: {len(self.annotation_frame)})"
+            )
+        )
 
     def run(self) -> None:
         """Start the Tkinter main loop."""
