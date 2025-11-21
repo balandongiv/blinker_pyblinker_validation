@@ -53,7 +53,7 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
-from typing import Iterable, Optional
+from typing import Iterable, Optional, Set
 
 import mne
 import pandas as pd
@@ -75,18 +75,23 @@ from tkinter import (
     StringVar,
     Text,
     Tk,
+    filedialog,
     messagebox,
 )
 
 from src.utils.annotations import annotations_to_frame, summarize_annotation_changes
 
 from .annotation_io import annotations_from_frame, load_annotation_frame, save_annotations
-from .annotation_merge import split_annotations_by_window
 from .browser import launch_browser_and_collect
 from .constants import ANNOTATION_COLUMNS, DEFAULT_ROOT
 from .discovery import find_fif_files
 from .logging_utils import configure_logger, last_edit_timestamp, latest_file_history, logger, read_history
 from .session import AnnotationSession
+from .segment_utils import (
+    merge_updated_annotations,
+    prepare_annotations_for_window,
+    segment_already_annotated,
+)
 
 class AnnotationApp:
     """Tkinter GUI controller for annotation management."""
@@ -117,6 +122,7 @@ class AnnotationApp:
         self.end_entry: Entry
         self.file_list: Listbox
         self.history_text: Text
+        self.annotation_filter: Listbox
 
         self.annotation_frame = pd.DataFrame(columns=ANNOTATION_COLUMNS)
         self.total_duration: float | None = None
@@ -140,6 +146,7 @@ class AnnotationApp:
         Label(root_frame, text="Dataset root:").pack(side=LEFT)
         root_entry = Entry(root_frame, textvariable=self.root_var, width=50)
         root_entry.pack(side=LEFT, padx=4, fill=X, expand=True)
+        Button(root_frame, text="Browse", command=self._choose_root).pack(side=LEFT, padx=(0, 4))
         Button(root_frame, text="Rescan", command=self._populate_files).pack(side=LEFT)
 
         Label(list_frame, text="Available FIF files:").pack(anchor="w")
@@ -169,6 +176,22 @@ class AnnotationApp:
         Button(controls, text="Open Segment", command=self._open_segment).pack(
             anchor="w", pady=8
         )
+        Label(controls, text="Hide annotation labels in plot:").pack(
+            anchor="w", pady=(4, 0)
+        )
+        filter_frame = Frame(controls)
+        filter_frame.pack(fill=BOTH, pady=(2, 8))
+        filter_scroll = Scrollbar(filter_frame)
+        filter_scroll.pack(side=RIGHT, fill=Y)
+        self.annotation_filter = Listbox(
+            filter_frame,
+            selectmode="multiple",
+            exportselection=False,
+            yscrollcommand=filter_scroll.set,
+            height=6,
+        )
+        self.annotation_filter.pack(side=LEFT, fill=BOTH, expand=True)
+        filter_scroll.config(command=self.annotation_filter.yview)
         Label(controls, textvariable=self.segment_status_var, fg="blue").pack(
             anchor="w", pady=(0, 8)
         )
@@ -254,6 +277,7 @@ class AnnotationApp:
         self.selected_file = self.fif_files[idx]
         csv_path = self.selected_file.with_suffix(".csv")
         self.annotation_frame = load_annotation_frame(csv_path)
+        self._refresh_annotation_filters()
 
         raw = mne.io.read_raw_fif(self.selected_file, preload=False)
         self.total_duration = float(raw.times[-1])
@@ -271,6 +295,16 @@ class AnnotationApp:
         logger.info(message)
         self._refresh_history()
         self._refresh_info_panel()
+
+    def _choose_root(self) -> None:
+        """Open a folder chooser to set the dataset root before rescanning."""
+
+        selection = filedialog.askdirectory(initialdir=str(self.root_path))
+        if not selection:
+            return
+
+        self.root_var.set(selection)
+        self._populate_files()
 
     def _validate_time_window(self) -> Optional[tuple[float, float]]:
         """Return a validated time window or ``None`` if invalid."""
@@ -299,6 +333,36 @@ class AnnotationApp:
             return None
 
         return start, end
+
+    def _refresh_annotation_filters(self) -> None:
+        """Populate the annotation filter listbox with available labels."""
+
+        labels: list[str] = []
+        if not self.annotation_frame.empty:
+            labels = sorted(
+                {
+                    desc
+                    for desc in self.annotation_frame["description"].dropna().astype(str)
+                    if desc
+                }
+            )
+
+        self.annotation_filter.delete(0, END)
+        for label in labels:
+            self.annotation_filter.insert(END, label)
+
+        self.annotation_filter.configure(state="normal" if labels else "disabled")
+
+    def _selected_labels_to_skip(self) -> Set[str]:
+        """Return the set of labels selected for exclusion from plotting."""
+
+        if not self.annotation_filter.size():
+            return set()
+
+        return {
+            self.annotation_filter.get(idx)
+            for idx in self.annotation_filter.curselection()
+        }
 
     def _open_segment(self) -> None:
         """Launch the MNE browser for the selected segment."""
@@ -335,24 +399,17 @@ class AnnotationApp:
         raw = mne.io.read_raw_fif(self.selected_file, preload=True)
         raw.set_annotations(annotations)
         frame = annotations_to_frame(raw.annotations)
-        inside, outside = split_annotations_by_window(frame, start, end)
-
-        ann_inside = mne.Annotations(
-            onset=inside["onset"].astype(float).to_numpy(),
-            duration=inside["duration"].astype(float).to_numpy(),
-            description=inside["description"].astype(str).tolist(),
-            )
+        skip_labels = self._selected_labels_to_skip()
+        ann_inside, inside, outside, _ = prepare_annotations_for_window(
+            frame, start, end, skip_labels
+        )
 
         ann_manual = launch_browser_and_collect(raw, ann_inside, session, start)
 
         updated_inside = annotations_to_frame(ann_manual)
         change_summary = summarize_annotation_changes(inside, updated_inside)
 
-        merged = (
-            pd.concat([updated_inside, outside], ignore_index=True)
-            .sort_values("onset")
-            .reset_index(drop=True)
-        )
+        merged = merge_updated_annotations(updated_inside, outside)
         annot_merged = annotations_from_frame(merged)
         raw.set_annotations(annot_merged)
         if not messagebox.askyesno(
@@ -365,6 +422,7 @@ class AnnotationApp:
         save_annotations(session.csv_path, merged)
 
         self.annotation_frame = merged
+        self._refresh_annotation_filters()
         self.status_var.set(
             (
                 f"Saved annotations to {session.csv_path} "
@@ -384,14 +442,6 @@ class AnnotationApp:
         """Start the Tkinter main loop."""
 
         self.window.mainloop()
-
-
-def segment_already_annotated(frame: pd.DataFrame, start: float, end: float) -> bool:
-    """Return ``True`` if any annotation overlaps the requested segment."""
-
-    durations = frame["duration"].fillna(0)
-    overlaps = (frame["onset"] < end) & ((frame["onset"] + durations) > start)
-    return bool(overlaps.any())
 
 
 def run_ui(
