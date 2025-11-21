@@ -44,6 +44,16 @@ def latest_file_history(log_path: Path, filename: str, max_entries: int = 3) -> 
     return matched[-max_entries:]
 
 
+def latest_remark(log_path: Path, max_lines: int = 200) -> str | None:
+    """Return the latest remark entry from the history log, if present."""
+
+    for entry in reversed(read_history(log_path, max_lines=max_lines)):
+        _, _, message = entry.partition(" - ")
+        if message.startswith("Remark:"):
+            return message
+    return None
+
+
 def last_edit_timestamp(csv_path: Path) -> str:
     """Return the last modification time for ``csv_path`` or ``"None"``."""
 
