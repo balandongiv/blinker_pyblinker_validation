@@ -205,19 +205,16 @@ def load_and_align(task: RecordingTask, tolerance_samples: int):
         ) from _PYBLINKER_IMPORT_ERROR
 
     LOGGER.info("Loading PyBlinker outputs from %s", task.py_path)
+
     py_payload = load_pickle(task.py_path)
     LOGGER.info("Loading MATLAB Blinker outputs from %s", task.blinker_path)
     blinker_payload = load_pickle(task.blinker_path)
 
-    py_events, blinker_events, sample_rate = prepare_event_tables(py_payload, blinker_payload)
+    py_events, blinker_events= prepare_event_tables(py_payload, blinker_payload)
     if py_events.empty or blinker_events.empty:
         raise ValueError(
             f"Insufficient event data for alignment (py={len(py_events)}, blinker={len(blinker_events)})"
         )
-    if sample_rate is None:
-        LOGGER.warning("Sampling rate unavailable; defaulting to 100 Hz for annotation timing")
-        sample_rate = 100.0
-
     LOGGER.info(
         "Computing alignment metrics for %s with tolerance=%s sample(s)",
         task.recording_id,
@@ -246,11 +243,36 @@ def process_recording(
     task: RecordingTask, tolerance_samples: int, plot: bool, *, overwrite_inspected: bool
 ) -> dict:
     """Process a single recording and return the computed metrics."""
+    raw = mne.io.read_raw_fif(task.fif_path, preload=True, verbose="ERROR")
+    # CHANNELS_TO_KEEP=["CH1"]
+    SAMPLING_RATE_HZ = 200.0
+    CHANNELS_TO_KEEP = ("CH1",)
+    TOLERANCE_SAMPLES = 10
+    N_PREVIEW_ROWS = 10
+    N_DIFF_ROWS = 20
+    signal = raw.get_data(picks=CHANNELS_TO_KEEP[0])[0]
+    py_payload = load_pickle(task.py_path)
+    LOGGER.info("Loading MATLAB Blinker outputs from %s", task.blinker_path)
+    blinker_payload = load_pickle(task.blinker_path)
 
-    annotations, metrics = load_and_align(task, tolerance_samples)
+    py_events, blinker_events = prepare_event_tables(py_payload, blinker_payload)
+
+    comparison = blink_comparison.compare_detected_vs_ground_truth(
+        py_events,
+        blinker_events,
+        SAMPLING_RATE_HZ,
+        tolerance_samples=TOLERANCE_SAMPLES,
+        n_preview_rows=N_PREVIEW_ROWS,
+        n_diff_rows=N_DIFF_ROWS,
+        detected_signal=signal,
+        )
+    metrics = comparison.metrics
+    # diff_table = comparison.diff_table
+    annotations = comparison.annotations
+
 
     LOGGER.info("Loading raw FIF file from %s", task.fif_path)
-    raw = mne.io.read_raw_fif(task.fif_path, preload=False, verbose="ERROR")
+
 
     if annotations is not None:
         LOGGER.info("Applying %s annotation(s) to raw", len(annotations))
@@ -261,7 +283,8 @@ def process_recording(
 
     pre_plot_annotations = raw.annotations.copy() if raw.annotations is not None else None
 
-    should_plot = plot and os.environ.get("PYBLINKER_SKIP_PLOT") != "1"
+    # should_plot = plot and os.environ.get("PYBLINKER_SKIP_PLOT") != "1"
+    should_plot=False
     if should_plot:
         matches = int(metrics.get("matches_within_tolerance", 0))
         ground_truth_only = int(metrics.get("ground_truth_only", 0))
@@ -278,27 +301,22 @@ def process_recording(
     elif plot:
         LOGGER.info("Skipping raw.plot() because PYBLINKER_SKIP_PLOT=1")
 
-    post_plot_annotations = raw.annotations.copy() if raw.annotations is not None else None
 
-    if not annotations_equal(pre_plot_annotations, post_plot_annotations):
-        output_path = task.inspected_path
-        if not overwrite_inspected:
-            LOGGER.info(
-                "Detected manual changes to annotations; skipping save because overwrite is disabled",
-            )
-        elif output_path.exists():
-            LOGGER.info(
-                "Detected manual changes to annotations; skipping save because %s exists",
-                output_path,
-            )
-        else:
-            LOGGER.info("Detected manual changes to annotations; saving to %s", output_path)
-            raw.annotations.save(output_path)
+
+
+    output_path = task.inspected_path
+    if os.path.exists(output_path) and not overwrite_inspected:
+        LOGGER.info("File %s already exists; overwrite disabled, not saving", output_path)
     else:
-        LOGGER.info("No annotation changes detected; nothing to save")
+        # Regardless, it will save, but the if-else is just for logging.
+        if os.path.exists(output_path) and overwrite_inspected:
+            LOGGER.info("File %s exists; overwrite enabled, overwriting", output_path)
+        else:
+            LOGGER.info("Saving annotations to %s", output_path)
 
-    LOGGER.info("Alignment metrics for %s: %s", task.recording_id, metrics)
-    return metrics
+        raw.annotations.save(output_path)
+
+    # return metrics
 
 
 def process_all(
@@ -310,14 +328,14 @@ def process_all(
 ) -> list[tuple[RecordingTask, dict]]:
     """Process each recording task, returning the metrics for every run."""
 
-    results: list[tuple[RecordingTask, dict]] = []
+    # results: list[tuple[RecordingTask, dict]] = []
     for task in tasks:
         LOGGER.info("Processing recording %s", task.recording_id)
-        metrics = process_recording(
+        process_recording(
             task, tolerance_samples, plot, overwrite_inspected=overwrite_inspected
         )
-        results.append((task, metrics))
-    return results
+        # results.append((task, metrics))
+    # return results
 
 
 def main(args: Namespace) -> int:

@@ -105,9 +105,10 @@ def run_workflow(
     step4_args = ["--root", str(DATASET_ROOT)]
     _run_step("step4_compare_", step4_args, step4_compare_.main)
 
-    # # Step 5 – Generate and review blink ground-truth annotations.
+    # Step 5 – Generate and review blink ground-truth annotations.
     # step5_args = ["--root", str(DATASET_ROOT), "--no-plot"]
     # step5_args.extend(["--recording-id", *DEFAULT_RECORDING_IDS])
+    # step5_args.extend(["--recording-id"])
     # if not overwrite_inspected:
     #     step5_args.append("--no-overwrite-inspected")
     # _run_step("step5_create_ground_truth", step5_args, step5_create_ground_truth.main)

@@ -30,20 +30,20 @@ from src.utils.ground_truth import (
 # Murat et al. (2018) recording identifiers that are highlighted in the
 # tutorial walkthrough.  The workflow still supports overriding the list
 # through ``--recording-id`` or explicit file paths when required.
-DEFAULT_RECORDING_IDS = (
-    "12400385",
-    "12400349",
-    "12400376",
-    "12400397",
-    "12400391",
-    "12400370",
-    "12400346",
-    "12400373",
-    "9636511",
-    "12400394",
-)
+# DEFAULT_RECORDING_IDS = (
+#     "12400385",
+#     "12400349",
+#     "12400376",
+#     "12400397",
+#     "12400391",
+#     "12400370",
+#     "12400346",
+#     "12400373",
+#     "9636511",
+#     "12400394",
+# )
 
-
+DEFAULT_RECORDING_IDS =None
 def build_argument_parser() -> argparse.ArgumentParser:
     """Create the CLI argument parser used by the ground truth workflow."""
 
