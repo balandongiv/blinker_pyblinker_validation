@@ -21,9 +21,31 @@ def launch_browser_and_collect(
     )
     print(f"Launching browser with title: {title}")
 
-
     raw_segment = raw.copy()
-    raw_segment.set_annotations(local_annotations)
+    annotations_for_plot = local_annotations
+    placeholder_onset: float | None = None
+    if "manual" not in annotations_for_plot.description:
+        placeholder_onset = start
+        annotations_for_plot = annotations_for_plot + mne.Annotations(
+            onset=[placeholder_onset], duration=[0.0], description=["manual"]
+        )
+
+    raw_segment.set_annotations(annotations_for_plot)
     raw_segment.plot(title=title, block=True, start=start)
     ann = raw_segment.annotations
+
+    if placeholder_onset is not None:
+        keep_indices = [
+            idx
+            for idx, (desc, onset, duration) in enumerate(
+                zip(ann.description, ann.onset, ann.duration, strict=True)
+            )
+            if not (
+                desc == "manual"
+                and duration == 0.0
+                and onset == placeholder_onset
+            )
+        ]
+        ann = ann[keep_indices]
+
     return ann

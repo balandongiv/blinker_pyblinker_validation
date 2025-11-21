@@ -73,6 +73,15 @@ def build_argument_parser() -> argparse.ArgumentParser:
         help="Reprocess recordings that already have *_annot_inspected.csv outputs.",
     )
     parser.add_argument(
+        "--no-overwrite-inspected",
+        dest="overwrite_inspected",
+        action="store_false",
+        help=(
+            "Do not overwrite existing *_annot_inspected.csv files when manual "
+            "changes are detected in the MNE browser."
+        ),
+    )
+    parser.add_argument(
         "--py-path",
         type=Path,
         help="Explicit path to a pyblinker_results.pkl file (single-recording mode).",

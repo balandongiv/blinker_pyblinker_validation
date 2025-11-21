@@ -242,7 +242,9 @@ def load_and_align(task: RecordingTask, tolerance_samples: int):
     return annotations, metrics
 
 
-def process_recording(task: RecordingTask, tolerance_samples: int, plot: bool) -> dict:
+def process_recording(
+    task: RecordingTask, tolerance_samples: int, plot: bool, *, overwrite_inspected: bool
+) -> dict:
     """Process a single recording and return the computed metrics."""
 
     annotations, metrics = load_and_align(task, tolerance_samples)
@@ -280,8 +282,18 @@ def process_recording(task: RecordingTask, tolerance_samples: int, plot: bool) -
 
     if not annotations_equal(pre_plot_annotations, post_plot_annotations):
         output_path = task.inspected_path
-        LOGGER.info("Detected manual changes to annotations; saving to %s", output_path)
-        raw.annotations.save(output_path)
+        if not overwrite_inspected:
+            LOGGER.info(
+                "Detected manual changes to annotations; skipping save because overwrite is disabled",
+            )
+        elif output_path.exists():
+            LOGGER.info(
+                "Detected manual changes to annotations; skipping save because %s exists",
+                output_path,
+            )
+        else:
+            LOGGER.info("Detected manual changes to annotations; saving to %s", output_path)
+            raw.annotations.save(output_path)
     else:
         LOGGER.info("No annotation changes detected; nothing to save")
 
@@ -293,13 +305,17 @@ def process_all(
     tasks: Sequence[RecordingTask],
     tolerance_samples: int,
     plot: bool,
+    *,
+    overwrite_inspected: bool,
 ) -> list[tuple[RecordingTask, dict]]:
     """Process each recording task, returning the metrics for every run."""
 
     results: list[tuple[RecordingTask, dict]] = []
     for task in tasks:
         LOGGER.info("Processing recording %s", task.recording_id)
-        metrics = process_recording(task, tolerance_samples, plot)
+        metrics = process_recording(
+            task, tolerance_samples, plot, overwrite_inspected=overwrite_inspected
+        )
         results.append((task, metrics))
     return results
 
@@ -312,6 +328,7 @@ def main(args: Namespace) -> int:
     )
 
     plot = not args.no_plot
+    overwrite_inspected = getattr(args, "overwrite_inspected", True)
 
     if args.py_path or args.blinker_path or args.fif_path:
         if not (args.py_path and args.blinker_path and args.fif_path):
@@ -360,7 +377,12 @@ def main(args: Namespace) -> int:
         LOGGER.info("Discovered %s recording(s) to process", len(tasks))
 
     try:
-        process_all(tasks, tolerance_samples=args.tolerance_samples, plot=plot)
+        process_all(
+            tasks,
+            tolerance_samples=args.tolerance_samples,
+            plot=plot,
+            overwrite_inspected=overwrite_inspected,
+        )
     except Exception:  # pragma: no cover - pass failure status through CLI
         LOGGER.exception("Ground-truth generation failed")
         return 1

@@ -85,7 +85,14 @@ from .annotation_io import annotations_from_frame, load_annotation_frame, save_a
 from .browser import launch_browser_and_collect
 from .constants import ANNOTATION_COLUMNS, DEFAULT_ROOT
 from .discovery import find_fif_files
-from .logging_utils import configure_logger, last_edit_timestamp, latest_file_history, logger, read_history
+from .logging_utils import (
+    configure_logger,
+    last_edit_timestamp,
+    latest_file_history,
+    latest_remark,
+    logger,
+    read_history,
+)
 from .session import AnnotationSession
 from .segment_utils import (
     merge_updated_annotations,
@@ -117,12 +124,14 @@ class AnnotationApp:
         self.info_var = StringVar(value="No file selected.")
         self.segment_status_var = StringVar(value="")
         self.root_var = StringVar(value=str(self.root_path))
+        self.latest_remark: str | None = latest_remark(self.log_path)
 
         self.start_entry: Entry
         self.end_entry: Entry
         self.file_list: Listbox
         self.history_text: Text
         self.annotation_filter: Listbox
+        self.remark_entry: Entry
 
         self.annotation_frame = pd.DataFrame(columns=ANNOTATION_COLUMNS)
         self.total_duration: float | None = None
@@ -200,6 +209,15 @@ class AnnotationApp:
             side=BOTTOM, fill=X, padx=8, pady=4
         )
 
+        remark_frame = Frame(self.window)
+        remark_frame.pack(side=BOTTOM, fill=X, padx=8, pady=(0, 4))
+        Label(remark_frame, text="Remark:").pack(side=LEFT)
+        self.remark_entry = Entry(remark_frame)
+        self.remark_entry.pack(side=LEFT, padx=4, fill=X, expand=True)
+        Button(remark_frame, text="Log remark", command=self._submit_remark).pack(
+            side=LEFT
+        )
+
         history_frame = Frame(self.window)
         history_frame.pack(side=BOTTOM, fill=BOTH, expand=True, padx=8, pady=4)
         Label(history_frame, text="Recent history:").pack(anchor="w")
@@ -239,6 +257,7 @@ class AnnotationApp:
         """Load history log entries into the UI widget."""
 
         entries = read_history(self.log_path)
+        self.latest_remark = latest_remark(self.log_path)
         self.history_text.configure(state="normal")
         self.history_text.delete("1.0", END)
         for entry in entries:
@@ -258,12 +277,14 @@ class AnnotationApp:
         count = len(self.annotation_frame)
         recent_edits = latest_file_history(self.log_path, self.selected_file.name)
         history_text = "\n".join(recent_edits) if recent_edits else "None"
+        remark_text = self.latest_remark or "None"
 
         self.info_var.set(
             f"Selected: {self.selected_file.name}\n"
             f"Duration: {self.total_duration:.1f} s\n"
             f"Annotations: {count}\n"
             f"Last edit: {last_edit_timestamp(csv_path)}\n"
+            f"Remark: {remark_text}\n"
             f"Recent actions:\n{history_text}"
         )
 
@@ -293,8 +314,21 @@ class AnnotationApp:
         """Record a history message to the log file and refresh the panel."""
 
         logger.info(message)
+        if message.startswith("Remark:"):
+            self.latest_remark = message
         self._refresh_history()
         self._refresh_info_panel()
+
+    def _submit_remark(self) -> None:
+        """Persist a user-provided remark to the activity log."""
+
+        remark = self.remark_entry.get().strip()
+        if not remark:
+            messagebox.showinfo("Empty remark", "Please type a remark before logging.")
+            return
+
+        self._log_history(f"Remark: {remark}")
+        self.remark_entry.delete(0, END)
 
     def _choose_root(self) -> None:
         """Open a folder chooser to set the dataset root before rescanning."""
@@ -385,7 +419,7 @@ class AnnotationApp:
             onset=self.annotation_frame["onset"].astype(float).to_numpy(),
             duration=self.annotation_frame["duration"].fillna(0).astype(float).to_numpy(),
             description=self.annotation_frame["description"].fillna("").astype(str).tolist(),
-            )
+        )
 
         session = AnnotationSession(
             fif_path=self.selected_file,
@@ -393,8 +427,7 @@ class AnnotationApp:
             start=start,
             end=end,
             annotated_before=annotated_before,
-            )
-
+        )
 
         raw = mne.io.read_raw_fif(self.selected_file, preload=True)
         raw.set_annotations(annotations)
@@ -408,16 +441,41 @@ class AnnotationApp:
 
         updated_inside = annotations_to_frame(ann_manual)
         change_summary = summarize_annotation_changes(inside, updated_inside)
+        has_changes = any(
+            [
+                change_summary.added,
+                change_summary.removed,
+                change_summary.changed,
+            ]
+        )
+
+        if not has_changes:
+            self.status_var.set("No Addition and Changes has been Made")
+            self._log_history("No Addition and Changes has been Made")
+            return
 
         merged = merge_updated_annotations(updated_inside, outside)
         annot_merged = annotations_from_frame(merged)
         raw.set_annotations(annot_merged)
         if not messagebox.askyesno(
             "Save annotations",
-            "Merge and save these annotations to the CSV?",
+            (
+                "Merge and save these annotations to the CSV?\n"
+                "Yes: Save the latest changes to the CSV.\n"
+                "No: Keep the existing CSV unchanged for now (you will be asked to confirm discarding)."
+            ),
         ):
-            self.status_var.set("Changes discarded at user request.")
-            return
+            discard = messagebox.askyesno(
+                "Discard changes?",
+                (
+                    "You have made changes to these annotations. Discard them without saving?\n"
+                    "Yes: No changes will be made to the CSV.\n"
+                    "No: The latest changes will be saved to the CSV."
+                ),
+            )
+            if discard:
+                self.status_var.set("Changes discarded at user request.")
+                return
 
         save_annotations(session.csv_path, merged)
 

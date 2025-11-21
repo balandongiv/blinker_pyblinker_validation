@@ -70,7 +70,9 @@ def _run_step(name: str, argv: Sequence[str], runner: Callable[[list[str] | None
     LOGGER.info("%s completed successfully", name)
 
 
-def run_workflow(*, force_step2: bool = False, force_step3: bool = False) -> None:
+def run_workflow(
+    *, force_step2: bool = False, force_step3: bool = False, overwrite_inspected: bool = True
+) -> None:
     """Run the Murat 2018 end-to-end processing workflow."""
 
     _ensure_root_exists(DATASET_ROOT)
@@ -106,6 +108,8 @@ def run_workflow(*, force_step2: bool = False, force_step3: bool = False) -> Non
     # # Step 5 – Generate and review blink ground-truth annotations.
     # step5_args = ["--root", str(DATASET_ROOT), "--no-plot"]
     # step5_args.extend(["--recording-id", *DEFAULT_RECORDING_IDS])
+    # if not overwrite_inspected:
+    #     step5_args.append("--no-overwrite-inspected")
     # _run_step("step5_create_ground_truth", step5_args, step5_create_ground_truth.main)
 
 
@@ -123,11 +127,24 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Overwrite MATLAB Blinker outputs if they already exist.",
     )
+    parser.add_argument(
+        "--no-overwrite-inspected",
+        dest="overwrite_inspected",
+        action="store_false",
+        help=(
+            "Prevent step5 from overwriting existing *_annot_inspected.csv files "
+            "when manual changes are detected."
+        ),
+    )
     args = parser.parse_args(argv)
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     try:
-        run_workflow(force_step2=args.force_step2, force_step3=args.force_step3)
+        run_workflow(
+            force_step2=args.force_step2,
+            force_step3=args.force_step3,
+            overwrite_inspected=args.overwrite_inspected,
+        )
     except Exception as exc:  # noqa: BLE001 - convert to exit status
         LOGGER.error("Workflow failed: %s", exc)
         return 1
