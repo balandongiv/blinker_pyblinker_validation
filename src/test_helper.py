@@ -4,9 +4,8 @@ from pathlib import Path
 
 import mne
 import numpy as np
-import pandas as pd
-
 from src.ui.annotation_io import load_annotation_frame
+from src.utils.annotations import annotations_to_frame  # noqa: F401
 
 
 def create_mock_raw(duration: float = 300, sfreq: float = 100) -> mne.io.Raw:
@@ -49,14 +48,3 @@ def load_raw_with_annotations(csv_path: Path, *, duration: float = 300, sfreq: f
     )
     raw.set_annotations(annotations)
     return raw
-
-
-def annotations_to_frame(annotations: mne.Annotations) -> pd.DataFrame:
-    """Convert an :class:`mne.Annotations` instance to a DataFrame."""
-    return pd.DataFrame(
-        {
-            "onset": np.asarray(annotations.onset, dtype=float),
-            "duration": np.asarray(annotations.duration, dtype=float),
-            "description": np.asarray(annotations.description, dtype=str),
-        }
-    )
