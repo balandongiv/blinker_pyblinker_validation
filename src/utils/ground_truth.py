@@ -282,7 +282,11 @@ def process_recording(
 
     if not annotations_equal(pre_plot_annotations, post_plot_annotations):
         output_path = task.inspected_path
-        if output_path.exists() and not overwrite_inspected:
+        if not overwrite_inspected:
+            LOGGER.info(
+                "Detected manual changes to annotations; skipping save because overwrite is disabled",
+            )
+        elif output_path.exists():
             LOGGER.info(
                 "Detected manual changes to annotations; skipping save because %s exists",
                 output_path,
