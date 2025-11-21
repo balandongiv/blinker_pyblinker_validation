@@ -40,6 +40,7 @@ import pandas as pd
 
 from src.test_helper import annotations_to_frame, load_raw_with_annotations
 from src.ui.annotation_io import annotations_from_frame
+from src.ui.app import filter_annotations_by_description
 from src.ui.annotation_merge import split_annotations_by_window
 
 DATA_DIR = Path(__file__).parent
@@ -229,6 +230,44 @@ class AnnotationMergeTestCase(unittest.TestCase):
         if PLOT_ENABLED:
             raw.set_annotations(annot_combine)
             raw.plot(title="Middle segment merge preview", block=True)
+
+    def test_filtering_labels_are_hidden_and_removed_from_merge(self) -> None:
+        """Ensure filtered labels are skipped in plotting and removed on merge."""
+
+        start, end = 100.0, 200.0
+
+        raw = load_raw_with_annotations(INPUT_CSV)
+        frame = annotations_to_frame(raw.annotations)
+        inside, outside = split_annotations_by_window(frame, start, end)
+
+        kept, filtered = filter_annotations_by_description(inside, {"K"})
+        self.assertTrue(len(filtered) >= 1)
+        self.assertTrue((filtered["description"] == "K").all())
+
+        ann_inside = mne.Annotations(
+            onset=kept["onset"].astype(float).to_numpy(),
+            duration=kept["duration"].astype(float).to_numpy(),
+            description=kept["description"].astype(str).tolist(),
+        )
+
+        raw_temp = raw.copy()
+        raw_temp.set_annotations(ann_inside)
+        ann_manual = raw_temp.annotations
+        ann_manual += mne.Annotations(
+            onset=[start + 1], duration=[0.0], description=["manual_add"]
+        )
+
+        updated_inside = annotations_to_frame(ann_manual)
+        merged = (
+            pd.concat([updated_inside, outside], ignore_index=True)
+            .sort_values("onset")
+            .reset_index(drop=True)
+        )
+
+        self.assertIn("manual_add", merged["description"].values)
+        self.assertNotIn("K", merged["description"].values)
+        filtered_onset = filtered.iloc[0]["onset"]
+        self.assertNotIn(filtered_onset, merged["onset"].values)
 
 
 if __name__ == "__main__":
