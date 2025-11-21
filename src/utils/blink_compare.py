@@ -261,9 +261,6 @@ def compare_recordings(
         overwrite=False
         if comparison.annotations is not None:
             annotations_path = (recording_dir / fif_fname).with_suffix(".csv")
-            LOGGER.info(
-                "Saving comparison annotations to %s", annotations_path,
-            )
             annotations_frame = pd.DataFrame(
                 {
                     "onset": comparison.annotations.onset,
