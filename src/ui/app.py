@@ -156,6 +156,7 @@ class AnnotationApp:
         self.file_search_var.trace_add("write", lambda *_: self._filter_files())
 
         self.plot_channel_mode = StringVar(value="all")
+        self.plot_duration_var = StringVar(value="")
 
         self._set_root_path(resolved_root)
         self.latest_remark: str | None = latest_remark(self.log_path)
@@ -167,6 +168,7 @@ class AnnotationApp:
         self.annotation_filter: Listbox
         self.remark_entry: Entry
         self.channel_entry: Entry
+        self.duration_entry: Entry
         self.filtered_files: list[Path] = []
 
         self.annotation_frame = pd.DataFrame(columns=ANNOTATION_COLUMNS)
@@ -266,6 +268,13 @@ class AnnotationApp:
         Label(entry_frame, text="End (s):").pack(side=LEFT)
         self.end_entry = Entry(entry_frame, width=10)
         self.end_entry.pack(side=LEFT, padx=4)
+
+        duration_frame = Frame(controls)
+        duration_frame.pack(fill=X, pady=(0, 4))
+        Label(duration_frame, text="Browser duration (s, optional):").pack(side=LEFT)
+        self.duration_entry = Entry(duration_frame, width=10, textvariable=self.plot_duration_var)
+        self.duration_entry.pack(side=LEFT, padx=(4, 0))
+        Label(duration_frame, text="(controls arrow key jump)").pack(side=LEFT, padx=(6, 0))
 
         channel_frame = Frame(controls)
         channel_frame.pack(fill=X, pady=(4, 0))
@@ -502,6 +511,31 @@ class AnnotationApp:
         if not start_raw and not end_raw:
             return 0.0, float(self.total_duration)
 
+        if start_raw and not end_raw:
+            try:
+                start = float(start_raw)
+            except ValueError:
+                messagebox.showerror(
+                    "Invalid input", "Start must be a number when End is left blank."
+                )
+                return None
+
+            if start < 0 or (self.total_duration and start >= self.total_duration):
+                messagebox.showerror(
+                    "Invalid range",
+                    ("Ensure 0 <= start < total duration when omitting the End time."),
+                )
+                return None
+
+            return start, float(self.total_duration)
+
+        if not start_raw and end_raw:
+            messagebox.showerror(
+                "Invalid input",
+                "Provide a Start time or leave both fields blank to use the full recording.",
+            )
+            return None
+
         try:
             start = float(start_raw)
             end = float(end_raw)
@@ -517,6 +551,30 @@ class AnnotationApp:
             return None
 
         return start, end
+
+    def _parse_browser_duration(self) -> tuple[bool, float | None]:
+        """Return a validated browser duration or ``None`` when left blank."""
+
+        raw_value = self.plot_duration_var.get().strip()
+        if not raw_value:
+            return True, None
+
+        try:
+            duration = float(raw_value)
+        except ValueError:
+            messagebox.showerror(
+                "Invalid duration", "Browser duration must be a valid number."
+            )
+            return False, None
+
+        if duration <= 0:
+            messagebox.showerror(
+                "Invalid duration",
+                "Browser duration must be greater than zero.",
+            )
+            return False, None
+
+        return True, duration
 
     def _refresh_annotation_filters(self) -> None:
         """Populate the annotation filter listbox with available labels."""
@@ -595,6 +653,9 @@ class AnnotationApp:
         if window is None:
             return
         start, end = window
+        duration_valid, browser_duration = self._parse_browser_duration()
+        if not duration_valid:
+            return
         annotated_before = segment_already_annotated(self.annotation_frame, start, end)
         status = "already annotated" if annotated_before else "new segment"
         self.segment_status_var.set(
@@ -627,7 +688,14 @@ class AnnotationApp:
         if picks == []:
             return
 
-        ann_manual = launch_browser_and_collect(raw, ann_inside, session, start, picks)
+        ann_manual = launch_browser_and_collect(
+            raw,
+            ann_inside,
+            session,
+            start,
+            picks,
+            browser_duration,
+        )
 
         updated_inside = annotations_to_frame(ann_manual)
         change_summary = summarize_annotation_changes(inside, updated_inside)
