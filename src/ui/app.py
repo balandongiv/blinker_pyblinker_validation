@@ -511,6 +511,31 @@ class AnnotationApp:
         if not start_raw and not end_raw:
             return 0.0, float(self.total_duration)
 
+        if start_raw and not end_raw:
+            try:
+                start = float(start_raw)
+            except ValueError:
+                messagebox.showerror(
+                    "Invalid input", "Start must be a number when End is left blank."
+                )
+                return None
+
+            if start < 0 or (self.total_duration and start >= self.total_duration):
+                messagebox.showerror(
+                    "Invalid range",
+                    ("Ensure 0 <= start < total duration when omitting the End time."),
+                )
+                return None
+
+            return start, float(self.total_duration)
+
+        if not start_raw and end_raw:
+            messagebox.showerror(
+                "Invalid input",
+                "Provide a Start time or leave both fields blank to use the full recording.",
+            )
+            return None
+
         try:
             start = float(start_raw)
             end = float(end_raw)
