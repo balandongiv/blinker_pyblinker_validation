@@ -4,9 +4,10 @@ Flowchart-style walkthrough of the GUI logic:
 
 1. Launch and discover FIF files
    → Prefer the configured dataset roots listed in ``config/dataset_paths.json``
-     (defaulting to ``D:\\dataset\\murat_2018`` then ``C:\\dataset\\murat_2018``)
-     and traverse all nested folders for ``*.fif`` files. An explicit ``--root``
-     or ``--files`` list can override the default search.
+     (defaulting to ``D:\\dataset\\murat_2018`` then
+     ``G:\\Other computers\\My Computer\\murat_2018``) and traverse all nested
+     folders for ``*.fif`` files. An explicit ``--root`` or ``--files`` list can
+     override the default search.
    → Populate the list widget; if nothing is found, show an error dialog and
    → exit.
 
@@ -150,6 +151,10 @@ class AnnotationApp:
         self.segment_status_var = StringVar(value="")
         self.root_var = StringVar(value=str(resolved_root))
 
+        self.file_search_var = StringVar(value="")
+        self.file_search_var.trace_add("write", lambda *_: self._filter_files())
+
+
         self._set_root_path(resolved_root)
         self.latest_remark: str | None = latest_remark(self.log_path)
 
@@ -159,6 +164,7 @@ class AnnotationApp:
         self.history_text: Text
         self.annotation_filter: Listbox
         self.remark_entry: Entry
+        self.filtered_files: list[Path] = []
 
         self.annotation_frame = pd.DataFrame(columns=ANNOTATION_COLUMNS)
         self.total_duration: float | None = None
@@ -230,6 +236,11 @@ class AnnotationApp:
         Button(root_frame, text="Rescan", command=self._populate_files).pack(side=LEFT)
 
         Label(list_frame, text="Available FIF files:").pack(anchor="w")
+        search_frame = Frame(list_frame)
+        search_frame.pack(fill=X, pady=(0, 4))
+        Label(search_frame, text="Search:").pack(side=LEFT)
+        search_entry = Entry(search_frame, textvariable=self.file_search_var)
+        search_entry.pack(side=LEFT, fill=X, expand=True, padx=(4, 0))
         scrollbar = Scrollbar(list_frame)
         scrollbar.pack(side=RIGHT, fill=Y)
         self.file_list = Listbox(list_frame, yscrollcommand=scrollbar.set, height=12)
@@ -304,6 +315,8 @@ class AnnotationApp:
         """Populate the listbox with available FIF files."""
 
         self.root_path = Path(self.root_var.get()).expanduser()
+        self.selected_file = None
+        self.total_duration = None
         try:
             self.fif_files = find_fif_files(self.root_path, provided=self.provided_files)
         except FileNotFoundError as exc:
@@ -321,19 +334,13 @@ class AnnotationApp:
                     self._populate_files()
             return
 
-        self.file_list.delete(0, END)
         self.status_var.set(
             f"Found {len(self.fif_files)} FIF files under {self.root_path}"
         )
         self._log_history(
             f"Scanning root {self.root_path} yielded {len(self.fif_files)} FIF files"
         )
-        for path in self.fif_files:
-            self.file_list.insert(END, path.name)
-
-        if len(self.fif_files) == 1:
-            self.file_list.selection_set(0)
-            self._on_file_select()
+        self._filter_files()
 
     def _refresh_history(self) -> None:
         """Load history log entries into the UI widget."""
@@ -377,7 +384,10 @@ class AnnotationApp:
         if not selection:
             return
         idx = selection[0]
-        self.selected_file = self.fif_files[idx]
+        try:
+            self.selected_file = self.filtered_files[idx]
+        except IndexError:
+            return
         csv_path = self.selected_file.with_suffix(".csv")
         self.annotation_frame = load_annotation_frame(csv_path)
         self._refresh_annotation_filters()
@@ -400,6 +410,31 @@ class AnnotationApp:
             self.latest_remark = message
         self._refresh_history()
         self._refresh_info_panel()
+
+    def _refresh_file_list(self, previous_selection: Path | None = None) -> None:
+        """Refresh the visible list of FIF files based on the current filter."""
+
+        self.file_list.delete(0, END)
+        for path in self.filtered_files:
+            self.file_list.insert(END, path.name)
+
+        if previous_selection and previous_selection in self.filtered_files:
+            idx = self.filtered_files.index(previous_selection)
+            self.file_list.selection_set(idx)
+            self._on_file_select()
+        elif len(self.filtered_files) == 1:
+            self.file_list.selection_set(0)
+            self._on_file_select()
+
+    def _filter_files(self, *_: object) -> None:
+        """Filter the displayed FIF list based on the search query."""
+
+        query = self.file_search_var.get().strip().lower()
+        previous_selection = self.selected_file
+        self.filtered_files = [
+            path for path in getattr(self, "fif_files", []) if query in path.name.lower()
+        ]
+        self._refresh_file_list(previous_selection=previous_selection)
 
     def _submit_remark(self) -> None:
         """Persist a user-provided remark to the activity log."""
