@@ -150,8 +150,10 @@ class AnnotationApp:
         self.info_var = StringVar(value="No file selected.")
         self.segment_status_var = StringVar(value="")
         self.root_var = StringVar(value=str(resolved_root))
+
         self.file_search_var = StringVar(value="")
         self.file_search_var.trace_add("write", lambda *_: self._filter_files())
+
 
         self._set_root_path(resolved_root)
         self.latest_remark: str | None = latest_remark(self.log_path)
