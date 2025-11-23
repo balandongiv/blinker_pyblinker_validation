@@ -71,12 +71,13 @@ from tkinter import (
     TOP,
     X,
     Y,
-    Button,
     Entry,
     Frame,
     Label,
     Listbox,
     Scrollbar,
+    Button,
+    Radiobutton,
     StringVar,
     Text,
     Tk,
@@ -154,6 +155,7 @@ class AnnotationApp:
         self.file_search_var = StringVar(value="")
         self.file_search_var.trace_add("write", lambda *_: self._filter_files())
 
+        self.plot_channel_mode = StringVar(value="all")
 
         self._set_root_path(resolved_root)
         self.latest_remark: str | None = latest_remark(self.log_path)
@@ -164,6 +166,7 @@ class AnnotationApp:
         self.history_text: Text
         self.annotation_filter: Listbox
         self.remark_entry: Entry
+        self.channel_entry: Entry
         self.filtered_files: list[Path] = []
 
         self.annotation_frame = pd.DataFrame(columns=ANNOTATION_COLUMNS)
@@ -264,6 +267,28 @@ class AnnotationApp:
         self.end_entry = Entry(entry_frame, width=10)
         self.end_entry.pack(side=LEFT, padx=4)
 
+        channel_frame = Frame(controls)
+        channel_frame.pack(fill=X, pady=(4, 0))
+        Label(channel_frame, text="Channel plotting:").pack(anchor="w")
+        channel_radio_frame = Frame(channel_frame)
+        channel_radio_frame.pack(anchor="w", fill=X)
+        Radiobutton(
+            channel_radio_frame,
+            text="Plot all channels",
+            variable=self.plot_channel_mode,
+            value="all",
+            command=self._update_channel_entry_state,
+        ).pack(anchor="w")
+        Radiobutton(
+            channel_radio_frame,
+            text="Plot selected channels only (comma-separated):",
+            variable=self.plot_channel_mode,
+            value="selected",
+            command=self._update_channel_entry_state,
+        ).pack(anchor="w")
+        self.channel_entry = Entry(channel_frame, state="disabled")
+        self.channel_entry.pack(anchor="w", fill=X, padx=(18, 0), pady=(2, 0))
+
         Button(controls, text="Open Segment", command=self._open_segment).pack(
             anchor="w", pady=8
         )
@@ -310,6 +335,14 @@ class AnnotationApp:
         )
         self.history_text.pack(side=LEFT, fill=BOTH, expand=True)
         history_scroll.config(command=self.history_text.yview)
+
+    def _update_channel_entry_state(self) -> None:
+        """Enable or disable channel entry based on the selected plot mode."""
+
+        state = "normal" if self.plot_channel_mode.get() == "selected" else "disabled"
+        self.channel_entry.configure(state=state)
+        if state == "disabled":
+            self.channel_entry.delete(0, END)
 
     def _populate_files(self) -> None:
         """Populate the listbox with available FIF files."""
@@ -515,6 +548,42 @@ class AnnotationApp:
             for idx in self.annotation_filter.curselection()
         }
 
+    def _determine_channel_picks(self, raw: mne.io.Raw) -> list[str] | None:
+        """Return channel picks or an empty list to signal invalid input."""
+
+        if self.plot_channel_mode.get() != "selected":
+            return None
+
+        requested = [
+            channel.strip()
+            for channel in self.channel_entry.get().split(",")
+            if channel.strip()
+        ]
+        if not requested:
+            messagebox.showwarning(
+                "Channel selection",
+                "Enter one or more channel names or switch to plotting all channels.",
+            )
+            return []
+
+        missing = [channel for channel in requested if channel not in raw.ch_names]
+        if missing:
+            available_preview = ", ".join(raw.ch_names[:10])
+            if len(raw.ch_names) > 10:
+                available_preview += ", ..."
+            messagebox.showwarning(
+                "Channel selection",
+                (
+                    "The following channels were not found in this recording: "
+                    f"{', '.join(missing)}.\n"
+                    "Please choose channels from the available list "
+                    f"(e.g., {available_preview})."
+                ),
+            )
+            return []
+
+        return requested
+
     def _open_segment(self) -> None:
         """Launch the MNE browser for the selected segment."""
 
@@ -554,7 +623,11 @@ class AnnotationApp:
             frame, start, end, skip_labels
         )
 
-        ann_manual = launch_browser_and_collect(raw, ann_inside, session, start)
+        picks = self._determine_channel_picks(raw)
+        if picks == []:
+            return
+
+        ann_manual = launch_browser_and_collect(raw, ann_inside, session, start, picks)
 
         updated_inside = annotations_to_frame(ann_manual)
         change_summary = summarize_annotation_changes(inside, updated_inside)

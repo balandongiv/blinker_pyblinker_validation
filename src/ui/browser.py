@@ -11,6 +11,7 @@ def launch_browser_and_collect(
     local_annotations: mne.Annotations,
     session: AnnotationSession,
     start: float,
+    picks: list[str] | None = None,
 ) -> mne.Annotations:
     """Open the MNE browser and return updated annotations aligned to global time."""
 
@@ -31,7 +32,7 @@ def launch_browser_and_collect(
         )
 
     raw_segment.set_annotations(annotations_for_plot)
-    raw_segment.plot(title=title, block=True, start=start)
+    raw_segment.plot(title=title, block=True, start=start, picks=picks)
     ann = raw_segment.annotations
 
     if placeholder_onset is not None:
