@@ -3,9 +3,11 @@ r"""Tkinter GUI for segment-wise MNE annotation management.
 Flowchart-style walkthrough of the GUI logic:
 
 1. Launch and discover FIF files
-   → Prefer the default dataset root ``D:\dataset\murat_2018`` and traverse
-     all nested folders for ``*.fif`` files. An explicit ``--root`` or
-     ``--files`` list can override the default search.
+   → Prefer the configured dataset roots listed in ``config/dataset_paths.json``
+     (defaulting to ``D:\\dataset\\murat_2018`` then
+     ``G:\\Other computers\\My Computer\\murat_2018``) and traverse all nested
+     folders for ``*.fif`` files. An explicit ``--root`` or ``--files`` list can
+     override the default search.
    → Populate the list widget; if nothing is found, show an error dialog and
    → exit.
 
@@ -52,8 +54,11 @@ Flowchart-style walkthrough of the GUI logic:
 from __future__ import annotations
 
 import argparse
+import logging
 from pathlib import Path
-from typing import Iterable, Optional, Set
+from typing import Iterable, Optional, Sequence, Set
+
+import json
 
 import mne
 import pandas as pd
@@ -83,7 +88,7 @@ from src.utils.annotations import annotations_to_frame, summarize_annotation_cha
 
 from .annotation_io import annotations_from_frame, load_annotation_frame, save_annotations
 from .browser import launch_browser_and_collect
-from .constants import ANNOTATION_COLUMNS, DEFAULT_ROOT
+from .constants import ANNOTATION_COLUMNS, DATASET_PATHS_FILE, DEFAULT_ROOT_CANDIDATES
 from .discovery import find_fif_files
 from .logging_utils import (
     configure_logger,
@@ -100,6 +105,29 @@ from .segment_utils import (
     segment_already_annotated,
 )
 
+def default_root_candidates() -> list[Path]:
+    """Return configured dataset roots from JSON or fall back to defaults."""
+
+    if DATASET_PATHS_FILE.exists():
+        try:
+            content = json.loads(DATASET_PATHS_FILE.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            logger.warning(
+                "Failed to parse %s; using built-in dataset roots.", DATASET_PATHS_FILE
+            )
+        else:
+            if isinstance(content, dict) and isinstance(content.get("paths"), list):
+                candidates = [
+                    Path(entry).expanduser()
+                    for entry in content["paths"]
+                    if isinstance(entry, str) and entry.strip()
+                ]
+                if candidates:
+                    return candidates
+
+    return list(DEFAULT_ROOT_CANDIDATES)
+
+
 class AnnotationApp:
     """Tkinter GUI controller for annotation management."""
 
@@ -109,21 +137,23 @@ class AnnotationApp:
         provided_files: Optional[Iterable[str]] = None,
         annotation_threshold: int = 100,
     ) -> None:
-        self.root_path = root_path or DEFAULT_ROOT
         self.provided_files = provided_files
         self.annotation_threshold = annotation_threshold
 
-        log_dir = self.root_path / "logs"
-        self.log_path = log_dir / "annotation_ui.log"
-        configure_logger(self.log_path)
+        candidate_roots = [root_path] if root_path else default_root_candidates()
 
         self.window = Tk()
         self.window.title("MNE Annotation Helper")
 
+        resolved_root = self._resolve_root_path(candidate_roots)
         self.status_var = StringVar(value="Select a FIF file to begin.")
         self.info_var = StringVar(value="No file selected.")
         self.segment_status_var = StringVar(value="")
-        self.root_var = StringVar(value=str(self.root_path))
+        self.root_var = StringVar(value=str(resolved_root))
+        self.file_search_var = StringVar(value="")
+        self.file_search_var.trace_add("write", lambda *_: self._filter_files())
+
+        self._set_root_path(resolved_root)
         self.latest_remark: str | None = latest_remark(self.log_path)
 
         self.start_entry: Entry
@@ -132,6 +162,7 @@ class AnnotationApp:
         self.history_text: Text
         self.annotation_filter: Listbox
         self.remark_entry: Entry
+        self.filtered_files: list[Path] = []
 
         self.annotation_frame = pd.DataFrame(columns=ANNOTATION_COLUMNS)
         self.total_duration: float | None = None
@@ -140,6 +171,50 @@ class AnnotationApp:
         self._build_ui()
         self._populate_files()
         self._refresh_history()
+
+    def _set_root_path(self, new_root: Path) -> None:
+        """Update the active dataset root and log destination."""
+
+        self.root_path = new_root
+        self.root_var.set(str(self.root_path))
+        for handler in list(logger.handlers):
+            if isinstance(handler, logging.FileHandler):
+                logger.removeHandler(handler)
+        self.log_path = self.root_path / "logs" / "annotation_ui.log"
+        configure_logger(self.log_path)
+
+    def _resolve_root_path(self, candidates: Sequence[Path]) -> Path:
+        """Return an existing dataset root, prompting the user if necessary."""
+
+        expanded = [path.expanduser() for path in candidates]
+        for path in expanded:
+            if path.exists():
+                return path
+
+        missing_paths = "\n".join(f"• {path}" for path in expanded)
+        messagebox.showwarning(
+            "Dataset root not found",
+            (
+                "None of the configured dataset roots are accessible:\n"
+                f"{missing_paths}\n\n"
+                "Please select the folder that contains your FIF files."
+            ),
+            parent=self.window,
+        )
+
+        selection = filedialog.askdirectory(parent=self.window, title="Select dataset root")
+        if selection:
+            return Path(selection).expanduser()
+
+        messagebox.showerror(
+            "Dataset root not found",
+            (
+                "No dataset folder was selected; the application will use the "
+                "current working directory instead."
+            ),
+            parent=self.window,
+        )
+        return Path.cwd()
 
     def _build_ui(self) -> None:
         """Construct the Tkinter layout."""
@@ -159,6 +234,11 @@ class AnnotationApp:
         Button(root_frame, text="Rescan", command=self._populate_files).pack(side=LEFT)
 
         Label(list_frame, text="Available FIF files:").pack(anchor="w")
+        search_frame = Frame(list_frame)
+        search_frame.pack(fill=X, pady=(0, 4))
+        Label(search_frame, text="Search:").pack(side=LEFT)
+        search_entry = Entry(search_frame, textvariable=self.file_search_var)
+        search_entry.pack(side=LEFT, fill=X, expand=True, padx=(4, 0))
         scrollbar = Scrollbar(list_frame)
         scrollbar.pack(side=RIGHT, fill=Y)
         self.file_list = Listbox(list_frame, yscrollcommand=scrollbar.set, height=12)
@@ -233,25 +313,32 @@ class AnnotationApp:
         """Populate the listbox with available FIF files."""
 
         self.root_path = Path(self.root_var.get()).expanduser()
+        self.selected_file = None
+        self.total_duration = None
         try:
             self.fif_files = find_fif_files(self.root_path, provided=self.provided_files)
         except FileNotFoundError as exc:
-            messagebox.showerror("No FIF files", str(exc))
+            retry = messagebox.askyesno(
+                "No FIF files",
+                f"{exc}\n\nWould you like to choose a different folder?",
+                parent=self.window,
+            )
+            if retry:
+                selection = filedialog.askdirectory(
+                    parent=self.window, title="Select dataset root"
+                )
+                if selection:
+                    self._set_root_path(Path(selection).expanduser())
+                    self._populate_files()
             return
 
-        self.file_list.delete(0, END)
         self.status_var.set(
             f"Found {len(self.fif_files)} FIF files under {self.root_path}"
         )
         self._log_history(
             f"Scanning root {self.root_path} yielded {len(self.fif_files)} FIF files"
         )
-        for path in self.fif_files:
-            self.file_list.insert(END, path.name)
-
-        if len(self.fif_files) == 1:
-            self.file_list.selection_set(0)
-            self._on_file_select()
+        self._filter_files()
 
     def _refresh_history(self) -> None:
         """Load history log entries into the UI widget."""
@@ -295,7 +382,10 @@ class AnnotationApp:
         if not selection:
             return
         idx = selection[0]
-        self.selected_file = self.fif_files[idx]
+        try:
+            self.selected_file = self.filtered_files[idx]
+        except IndexError:
+            return
         csv_path = self.selected_file.with_suffix(".csv")
         self.annotation_frame = load_annotation_frame(csv_path)
         self._refresh_annotation_filters()
@@ -318,6 +408,31 @@ class AnnotationApp:
             self.latest_remark = message
         self._refresh_history()
         self._refresh_info_panel()
+
+    def _refresh_file_list(self, previous_selection: Path | None = None) -> None:
+        """Refresh the visible list of FIF files based on the current filter."""
+
+        self.file_list.delete(0, END)
+        for path in self.filtered_files:
+            self.file_list.insert(END, path.name)
+
+        if previous_selection and previous_selection in self.filtered_files:
+            idx = self.filtered_files.index(previous_selection)
+            self.file_list.selection_set(idx)
+            self._on_file_select()
+        elif len(self.filtered_files) == 1:
+            self.file_list.selection_set(0)
+            self._on_file_select()
+
+    def _filter_files(self, *_: object) -> None:
+        """Filter the displayed FIF list based on the search query."""
+
+        query = self.file_search_var.get().strip().lower()
+        previous_selection = self.selected_file
+        self.filtered_files = [
+            path for path in getattr(self, "fif_files", []) if query in path.name.lower()
+        ]
+        self._refresh_file_list(previous_selection=previous_selection)
 
     def _submit_remark(self) -> None:
         """Persist a user-provided remark to the activity log."""
@@ -521,7 +636,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Annotate FIF files in segments.")
     parser.add_argument(
         "--root",
-        default=str(DEFAULT_ROOT),
+        default=str(default_root_candidates()[0]),
         help="Directory to search for FIF files when an explicit list is not provided.",
     )
     parser.add_argument(
