@@ -19,7 +19,10 @@ from src.utils.blink_compare import (  # noqa: E402 - deferred import for path s
     compare_recordings_blinker_vs_pyblinker,
     render_report,
 )
-from src.utils.stat import build_summary_frame,build_overall_summary
+from src.utils.stat import (  # noqa: E402 - deferred import for path setup
+    build_overall_summary,
+    build_summary_frame,
+)
 from src.utils.config_utils import (  # noqa: E402 - deferred import for path setup
     DEFAULT_CONFIG_PATH,
     get_path_setting,
