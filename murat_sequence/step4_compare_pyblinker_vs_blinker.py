@@ -1,4 +1,5 @@
-"""Compare PyBlinker outputs with MATLAB Blinker results."""
+"""Compare PyBlinker outputs with MATLAB Blinker results.
+In this script, we assume BLINKER as the ground truth"""
 
 from __future__ import annotations
 
@@ -15,7 +16,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from src.utils.blink_compare import (  # noqa: E402 - deferred import for path setup
     RecordingComparison,
-    compare_recordings,
+    compare_recordings_blinker_vs_pyblinker,
     render_report,
 )
 from src.utils.stat import build_summary_frame,build_overall_summary
@@ -77,7 +78,7 @@ def main(argv: list[str] | None = None) -> int:
     output_dir = args.root / "reports"
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    comparisons: list[RecordingComparison] = compare_recordings(
+    comparisons: list[RecordingComparison] = compare_recordings_blinker_vs_pyblinker(
         args.root,
         tolerance_samples=args.tolerance_samples,
         comparator=_blink_comparison,

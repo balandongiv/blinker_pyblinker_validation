@@ -216,7 +216,7 @@ def render_report(
 
 
 
-def compare_recordings(
+def compare_recordings_blinker_vs_pyblinker(
     root: Path,
     *,
     tolerance_samples: int,

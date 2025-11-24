@@ -39,10 +39,10 @@ from murat_sequence import (  # noqa: E402,F401 - imported for optional workflow
     step1_prepare_dataset,
     step2_pyblinker,
     step3_run_blinker,
-    step4_compare_,
-    step5_create_ground_truth,
+    step4_compare_pyblinker_vs_blinker,
+    step5_compare_viz_vs_pyblinker,
 )
-from murat_sequence.step5_create_ground_truth import (  # noqa: E402,F401 - re-exported for reuse
+from murat_sequence.step5_compare_viz_vs_pyblinker import (  # noqa: E402,F401 - re-exported for reuse
     DEFAULT_RECORDING_IDS,
 )
 
@@ -103,7 +103,7 @@ def run_workflow(
 
     # Step 4 – Compare PyBlinker ↔ MATLAB Blinker.
     step4_args = ["--root", str(DATASET_ROOT)]
-    _run_step("step4_compare_", step4_args, step4_compare_.main)
+    _run_step("step4_compare_", step4_args, step4_compare_pyblinker_vs_blinker.main)
 
     # Step 5 – Generate and review blink ground-truth annotations.
     # step5_args = ["--root", str(DATASET_ROOT), "--no-plot"]

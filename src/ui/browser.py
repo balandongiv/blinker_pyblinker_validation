@@ -38,10 +38,11 @@ def launch_browser_and_collect(
         "block": True,
         "start": start,
         "picks": picks,
+            # "duration": duration
     }
     if duration is not None:
         plot_kwargs["duration"] = duration
-
+    print(f"The duration for plotting is set to: {plot_kwargs.get('duration')}")
     raw_segment.plot(**plot_kwargs)
     ann = raw_segment.annotations
 
