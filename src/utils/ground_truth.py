@@ -210,6 +210,8 @@ def load_and_align(task: RecordingTask, tolerance_samples: int):
     LOGGER.info("Loading MATLAB Blinker outputs from %s", task.blinker_path)
     blinker_payload = load_pickle(task.blinker_path)
 
+    sample_rate = float(py_payload.get("metrics", {}).get("sample_rate", 200.0))
+
     py_events, blinker_events= prepare_event_tables(py_payload, blinker_payload)
     if py_events.empty or blinker_events.empty:
         raise ValueError(
@@ -280,8 +282,6 @@ def process_recording(
     else:
         LOGGER.info("No annotations generated; clearing existing raw annotations")
         raw.set_annotations(None)
-
-    pre_plot_annotations = raw.annotations.copy() if raw.annotations is not None else None
 
     # should_plot = plot and os.environ.get("PYBLINKER_SKIP_PLOT") != "1"
     should_plot=False

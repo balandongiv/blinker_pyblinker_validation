@@ -75,6 +75,8 @@ def iter_edf_files(dataset_root: Path) -> Iterable[Path]:
 
 
 def start_matlab(eeglab_root: Path, project_root: Path, blinker_plugin: str):
+    import matlab.engine
+
     eng = matlab.engine.start_matlab("-nojvm -nosplash -nodesktop")
 
     eng.addpath(eng.genpath(str(project_root)), nargout=0)

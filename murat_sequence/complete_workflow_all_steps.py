@@ -1,13 +1,14 @@
 """End-to-end runner for the Murat 2018 processing pipeline.
 
-This script orchestrates the five individual workflow steps provided in this
-repository:
+This script orchestrates the comparison-focused workflow steps provided in
+this repository:
 
 1. :mod:`murat_sequence.step1_prepare_dataset`
 2. :mod:`murat_sequence.step2_pyblinker`
 3. :mod:`murat_sequence.step3_run_blinker`
-4. :mod:`murat_sequence.step4_compare_`
-5. :mod:`murat_sequence.step5_create_ground_truth`
+4. :mod:`murat_sequence.step4_compare_pyblinker_vs_blinker`
+5. :mod:`murat_sequence.step5_compare_viz_vs_pyblinker`
+6. :mod:`murat_sequence.step6_compare_viz_vs_blinker`
 
 The workflow uses ``D:/dataset/murat_2018`` as the canonical storage location
 for both the downloaded dataset and any derived outputs (FIF/EDF files,
@@ -41,6 +42,7 @@ from murat_sequence import (  # noqa: E402,F401 - imported for optional workflow
     step3_run_blinker,
     step4_compare_pyblinker_vs_blinker,
     step5_compare_viz_vs_pyblinker,
+    step6_compare_viz_vs_blinker,
 )
 from murat_sequence.step5_compare_viz_vs_pyblinker import (  # noqa: E402,F401 - re-exported for reuse
     DEFAULT_RECORDING_IDS,
@@ -70,8 +72,31 @@ def _run_step(name: str, argv: Sequence[str], runner: Callable[[list[str] | None
     LOGGER.info("%s completed successfully", name)
 
 
+def _recording_args(
+    *,
+    mode: str,
+    recording_ids: Sequence[str] | None,
+) -> list[str]:
+    """Build CLI arguments shared by visualization comparison steps."""
+
+    args: list[str] = []
+    if mode == "all":
+        args.append("--all-recordings")
+    else:
+        ids = recording_ids if recording_ids else DEFAULT_RECORDING_IDS
+        for rec_id in ids:
+            args.extend(["--recording-id", rec_id])
+    return args
+
+
 def run_workflow(
-    *, force_step2: bool = False, force_step3: bool = False, overwrite_inspected: bool = True
+    *,
+    force_step2: bool = False,
+    force_step3: bool = False,
+    overwrite_inspected: bool = True,
+    recording_mode: str = "top-bottom",
+    recording_ids: Sequence[str] | None = None,
+    tolerance_samples: int = 20,
 ) -> None:
     """Run the Murat 2018 end-to-end processing workflow."""
 
@@ -102,16 +127,42 @@ def run_workflow(
     # _run_step("step3_run_blinker", step3_args, step3_run_blinker.main)
 
     # Step 4 – Compare PyBlinker ↔ MATLAB Blinker.
-    step4_args = ["--root", str(DATASET_ROOT)]
+    step4_args = [
+        "--root",
+        str(DATASET_ROOT),
+        "--tolerance-samples",
+        str(tolerance_samples),
+    ]
     _run_step("step4_compare_", step4_args, step4_compare_pyblinker_vs_blinker.main)
 
-    # Step 5 – Generate and review blink ground-truth annotations.
-    # step5_args = ["--root", str(DATASET_ROOT), "--no-plot"]
-    # step5_args.extend(["--recording-id", *DEFAULT_RECORDING_IDS])
-    # step5_args.extend(["--recording-id"])
-    # if not overwrite_inspected:
-    #     step5_args.append("--no-overwrite-inspected")
-    # _run_step("step5_create_ground_truth", step5_args, step5_create_ground_truth.main)
+    comparison_mode = recording_mode if recording_mode in {"all", "custom"} else "custom"
+    comparison_ids = recording_ids if recording_mode == "custom" else None
+
+    step5_args = [
+        "--root",
+        str(DATASET_ROOT),
+        "--tolerance-samples",
+        str(tolerance_samples),
+    ]
+    step5_args.extend(_recording_args(mode=comparison_mode, recording_ids=comparison_ids))
+    _run_step(
+        "step5_compare_viz_vs_pyblinker",
+        step5_args,
+        step5_compare_viz_vs_pyblinker.main,
+    )
+
+    step6_args = [
+        "--root",
+        str(DATASET_ROOT),
+        "--tolerance-samples",
+        str(tolerance_samples),
+    ]
+    step6_args.extend(_recording_args(mode=comparison_mode, recording_ids=comparison_ids))
+    _run_step(
+        "step6_compare_viz_vs_blinker",
+        step6_args,
+        step6_compare_viz_vs_blinker.main,
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -137,6 +188,27 @@ def main(argv: list[str] | None = None) -> int:
             "when manual changes are detected."
         ),
     )
+    parser.add_argument(
+        "--recording-mode",
+        choices=["top-bottom", "all", "custom"],
+        default="top-bottom",
+        help=(
+            "Choose whether to run the visualization comparisons across all recordings, "
+            "only the predefined top/bottom cohort, or an explicit set supplied with "
+            "--recording-id."
+        ),
+    )
+    parser.add_argument(
+        "--recording-id",
+        action="append",
+        help="Recording ID to include when --recording-mode=custom (can be repeated).",
+    )
+    parser.add_argument(
+        "--tolerance-samples",
+        type=int,
+        default=20,
+        help="Blink boundary tolerance (samples) for comparison steps.",
+    )
     args = parser.parse_args(argv)
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -145,6 +217,9 @@ def main(argv: list[str] | None = None) -> int:
             force_step2=args.force_step2,
             force_step3=args.force_step3,
             overwrite_inspected=args.overwrite_inspected,
+            recording_mode=args.recording_mode,
+            recording_ids=args.recording_id,
+            tolerance_samples=args.tolerance_samples,
         )
     except Exception as exc:  # noqa: BLE001 - convert to exit status
         LOGGER.error("Workflow failed: %s", exc)
