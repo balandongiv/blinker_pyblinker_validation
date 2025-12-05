@@ -21,11 +21,28 @@ class PathPair:
     cvat_root: Path
 
 
-def _normalize_entry(entry: dict) -> PathPair | None:
+def _resolve_path(value: Path, *, base_dir: Path) -> Path:
+    """Resolve ``value`` relative to ``base_dir`` with a parent fallback."""
+
+    if value.is_absolute():
+        return value
+
+    candidate = (base_dir / value).resolve()
+    if candidate.exists():
+        return candidate
+
+    fallback = (base_dir.parent / value).resolve()
+    if fallback.exists():
+        return fallback
+
+    return candidate
+
+
+def _normalize_entry(entry: dict, *, base_dir: Path) -> PathPair | None:
     try:
         name = str(entry["name"])
-        data_root = Path(entry["data_root"])
-        cvat_root = Path(entry["cvat_root"])
+        data_root = _resolve_path(Path(entry["data_root"]), base_dir=base_dir)
+        cvat_root = _resolve_path(Path(entry["cvat_root"]), base_dir=base_dir)
     except Exception as exc:  # pragma: no cover - defensive parsing
         logger.warning("Skipping invalid path pair entry %s: %s", entry, exc)
         return None
@@ -46,9 +63,10 @@ def load_path_pairs(config_path: Path) -> List[PathPair]:
         logger.warning("Failed to read %s: %s", config_path, exc)
         return []
 
+    base_dir = config_path.parent.resolve()
     pairs: list[PathPair] = []
     for entry in content.get("pairs", []):
-        pair = _normalize_entry(entry)
+        pair = _normalize_entry(entry, base_dir=base_dir)
         if pair is not None:
             pairs.append(pair)
 
