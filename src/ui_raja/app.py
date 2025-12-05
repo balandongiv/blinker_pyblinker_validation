@@ -46,7 +46,12 @@ from src.ui_murat.segment_utils import (
 )
 
 from .annotation_import import AnnotationImportError, ensure_annotations
-from .constants import DEFAULT_CVAT_ROOT, DEFAULT_DATA_ROOT, DEFAULT_SAMPLING_RATE
+from .constants import (
+    DEFAULT_CHANNEL_PICKS,
+    DEFAULT_CVAT_ROOT,
+    DEFAULT_DATA_ROOT,
+    DEFAULT_SAMPLING_RATE,
+)
 from .discovery import RajaDataset, SessionInfo
 
 logger = logging.getLogger(__name__)
@@ -67,7 +72,7 @@ class RajaAnnotationApp:
         self.status_var = StringVar(value="Select a session to begin.")
         self.info_var = StringVar(value="No session selected.")
         self.segment_status_var = StringVar(value="")
-        self.plot_channel_mode = StringVar(value="all")
+        self.plot_channel_mode = StringVar(value="selected")
         self.plot_duration_var = StringVar(value="")
 
         self.start_entry: Entry
@@ -164,8 +169,9 @@ class RajaAnnotationApp:
             value="selected",
             command=self._update_channel_entry_state,
         ).pack(anchor="w")
-        self.channel_entry = Entry(channel_frame, state="disabled")
+        self.channel_entry = Entry(channel_frame, state="normal")
         self.channel_entry.pack(anchor="w", fill=X, padx=(18, 0), pady=(2, 0))
+        self.channel_entry.insert(0, ", ".join(DEFAULT_CHANNEL_PICKS))
 
         button_frame = Frame(control_frame)
         button_frame.pack(fill=X, pady=5)

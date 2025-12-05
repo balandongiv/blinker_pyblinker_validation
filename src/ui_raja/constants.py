@@ -28,3 +28,11 @@ DEFAULT_SAMPLING_RATE = 30.0
 
 # Preferred FIF filename within each session directory.
 PRIMARY_FIF_CANDIDATES = ["ear_eog.fif", "ear_eog.fif.gz"]
+
+# Default channel picks used when launching the Raja browser.
+DEFAULT_CHANNEL_PICKS = [
+    "EAR-avg_ear",
+    "eog_vert_right",
+    "eog_vert_left",
+    "EEG--E8",
+]
