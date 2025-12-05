@@ -28,6 +28,25 @@ def expected_zip_path(cvat_root: Path, session: SessionInfo) -> Path:
     return cvat_root / session.subject_id / "from_cvat" / f"{session.session_name}.zip"
 
 
+def _discover_cvat_root(session: SessionInfo, provided_root: Path) -> Path:
+    """Return the best CVAT root for a session, preferring the provided root."""
+
+    provided_root = provided_root.resolve()
+    if provided_root.exists():
+        return provided_root
+
+    resolved_fif = session.fif_path.resolve()
+    for parent in resolved_fif.parents:
+        candidate = parent / "CVAT_visual_annotation" / "cvat_zip_final"
+        if candidate.exists():
+            logger.info(
+                "Using fallback CVAT root %s for %s/%s", candidate, session.subject_id, session.session_name
+            )
+            return candidate
+
+    return provided_root
+
+
 def load_shift_value(config_path: Path, session: SessionInfo) -> int:
     if not config_path.exists():
         logger.warning("Config file %s not found; using zero shift.", config_path)
@@ -76,7 +95,8 @@ def import_annotations(
 ) -> tuple[pd.DataFrame, Path]:
     """Import annotations from the CVAT ZIP and return a normalized frame and source path."""
 
-    zip_path = expected_zip_path(cvat_root, session)
+    resolved_root = _discover_cvat_root(session, cvat_root)
+    zip_path = expected_zip_path(resolved_root, session)
     if not zip_path.exists():
         logger.warning(
             "No CVAT ZIP available for %s/%s at %s", session.subject_id, session.session_name, zip_path
