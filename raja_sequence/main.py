@@ -8,12 +8,6 @@ from helper import load_ground_truth, unzip_file, restructure_blink_dataframe
 CVAT_ROOT = r"C:\Users\balan\OneDrive - ums.edu.my\CVAT_visual_annotation\cvat_zip_final"
 DATA_ROOT = r"D:\dataset\drowsy_driving_raja_processed"
 
-import pandas as pd
-import warnings
-
-
-
-
 def build_path_dic(cvat_root: str):
 	"""
 	Build a dict:

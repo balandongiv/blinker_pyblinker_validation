@@ -1,0 +1,7 @@
+pairs:
+  - name: Windows dataset paths
+    data_root: "D:\\dataset\\drowsy_driving_raja_processed"
+    cvat_root: "C:\\Users\\balan\\OneDrive - ums.edu.my\\CVAT_visual_annotation\\cvat_zip_final"
+  - name: Mock dataset paths
+    data_root: mock_data/dataset/drowsy_driving_raja_processed
+    cvat_root: mock_data/CVAT_visual_annotation/cvat_zip_final
