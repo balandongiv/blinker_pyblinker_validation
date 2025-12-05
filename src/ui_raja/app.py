@@ -66,6 +66,25 @@ from .path_pairs import PathPair, load_path_pairs
 logger = logging.getLogger(__name__)
 
 
+STATUS_OPTIONS = ("Pending", "Ongoing", "Complete")
+STATUS_ORDER = {name: index for index, name in enumerate(STATUS_OPTIONS)}
+
+
+def subject_sort_key(subject_id: str) -> tuple[int, str]:
+    """Return a numeric-first sort key for Raja subject identifiers."""
+
+    if subject_id.lower().startswith("s") and subject_id[1:].isdigit():
+        return int(subject_id[1:]), subject_id
+    return (10**6, subject_id.lower())
+
+
+def status_sort_key(status_value: str) -> tuple[int, str]:
+    """Sort key that respects the defined status progression."""
+
+    order = STATUS_ORDER.get(status_value, len(STATUS_ORDER))
+    return order, status_value.lower()
+
+
 class RajaAnnotationApp:
     """Tkinter GUI controller for Raja annotations."""
 
@@ -96,10 +115,14 @@ class RajaAnnotationApp:
         self.plot_channel_mode = StringVar(value="selected")
         self.plot_duration_var = StringVar(value="")
         self.path_pair_var = StringVar(value=self.active_pair_name)
-        self.status_selection_var = StringVar(value="Pending")
+        self.status_selection_var = StringVar(value=STATUS_OPTIONS[0])
         self.status_detail_var = StringVar(value="Select a recording to update its status.")
 
         self.session_status: dict[Path, str] = {}
+        self.status_editor: ttk.Combobox | None = None
+        self.status_editor_var: StringVar | None = None
+        self._status_sort_column: str | None = None
+        self._status_sort_reverse = False
 
         self.start_entry: Entry
         self.end_entry: Entry
@@ -271,7 +294,9 @@ class RajaAnnotationApp:
         columns = ("subject", "session", "status")
         self.status_tree = ttk.Treeview(tree_frame, columns=columns, show="headings", height=15)
         for column, heading in zip(columns, ["Subject", "Session", "Status"]):
-            self.status_tree.heading(column, text=heading)
+            self.status_tree.heading(
+                column, text=heading, command=lambda c=column: self._sort_status_table(c)
+            )
             self.status_tree.column(column, width=180 if column != "status" else 120, anchor="w")
 
         scrollbar = Scrollbar(tree_frame, orient="vertical", command=self.status_tree.yview)
@@ -280,6 +305,7 @@ class RajaAnnotationApp:
         scrollbar.pack(side=RIGHT, fill=Y)
 
         self.status_tree.bind("<<TreeviewSelect>>", lambda *_: self._on_status_tree_select())
+        self.status_tree.bind("<Button-1>", self._on_status_tree_click)
 
         control_frame = Frame(parent)
         control_frame.pack(fill=X, padx=8, pady=(0, 8))
@@ -291,9 +317,7 @@ class RajaAnnotationApp:
         OptionMenu(
             control_frame,
             self.status_selection_var,
-            "Pending",
-            "Ongoing",
-            "Complete",
+            *STATUS_OPTIONS,
         ).pack(side=LEFT, padx=(0, 6))
 
         Button(control_frame, text="Update Status", command=self._set_selected_status).pack(side=LEFT)
@@ -313,7 +337,7 @@ class RajaAnnotationApp:
 
         for session in self.dataset.all_sessions():
             self.session_status[session.fif_path] = existing_status.get(
-                session.fif_path, "Pending"
+                session.fif_path, STATUS_OPTIONS[0]
             )
 
     def _refresh_status_table(self) -> None:
@@ -322,24 +346,43 @@ class RajaAnnotationApp:
             return
 
         for session in self.dataset.all_sessions():
-            status = self.session_status.get(session.fif_path, "Pending")
+            status = self.session_status.get(session.fif_path, STATUS_OPTIONS[0])
             self.status_tree.insert(
                 "",
                 "end",
                 iid=str(session.fif_path),
                 values=(session.subject_id, session.session_name, status),
             )
+        if self._status_sort_column:
+            self._sort_status_table(self._status_sort_column, toggle=False)
+        else:
+            self._sort_status_table("subject", toggle=False)
 
     def _clear_status_table(self) -> None:
+        self._destroy_status_editor()
         if hasattr(self, "status_tree"):
             for child in self.status_tree.get_children():
                 self.status_tree.delete(child)
         self.status_detail_var.set("Select a recording to update its status.")
 
+    def _on_status_tree_click(self, event) -> None:  # type: ignore[override]
+        self._destroy_status_editor()
+        region = self.status_tree.identify_region(event.x, event.y)
+        if region != "cell":
+            return
+        column = self.status_tree.identify_column(event.x)
+        if column != "#3":
+            return
+        row_id = self.status_tree.identify_row(event.y)
+        if not row_id:
+            return
+        self.status_tree.selection_set(row_id)
+        self._begin_status_edit(row_id)
+
     def _on_status_tree_select(self) -> None:
         selection = self.status_tree.selection()
         if not selection:
-            self.status_selection_var.set("Pending")
+            self.status_selection_var.set(STATUS_OPTIONS[0])
             self.status_detail_var.set("Select a recording to update its status.")
             return
 
@@ -350,6 +393,36 @@ class RajaAnnotationApp:
             self.status_detail_var.set(
                 f"Selected {values[0]} / {values[1]} (status: {values[2]})."
             )
+
+    def _begin_status_edit(self, item_id: str) -> None:
+        bbox = self.status_tree.bbox(item_id, "status")
+        if not bbox:
+            return
+        x, y, width, height = bbox
+        self._destroy_status_editor()
+        current = self.status_tree.set(item_id, "status")
+        self.status_editor_var = StringVar(value=current)
+        self.status_editor = ttk.Combobox(
+            self.status_tree,
+            values=STATUS_OPTIONS,
+            textvariable=self.status_editor_var,
+            state="readonly",
+        )
+        self.status_editor.place(x=x, y=y, width=width, height=height)
+        self.status_editor.bind(
+            "<<ComboboxSelected>>", lambda *_: self._commit_status_edit(item_id)
+        )
+        self.status_editor.bind("<FocusOut>", lambda *_: self._destroy_status_editor())
+        self.status_editor.focus_set()
+
+    def _commit_status_edit(self, item_id: str) -> None:
+        if not self.status_editor_var:
+            return
+        new_status = self.status_editor_var.get()
+        values = list(self.status_tree.item(item_id, "values"))
+        if len(values) >= 3:
+            self._update_status(item_id, values, new_status)
+        self._destroy_status_editor()
 
     def _set_selected_status(self) -> None:
         selection = self.status_tree.selection()
@@ -363,17 +436,47 @@ class RajaAnnotationApp:
         item_id = selection[0]
         values = list(self.status_tree.item(item_id, "values"))
         if len(values) >= 3:
-            values[2] = new_status
-            self.status_tree.item(item_id, values=values)
+            self._update_status(item_id, values, new_status)
 
+    def _update_status(self, item_id: str, values: list[str], new_status: str) -> None:
+        values[2] = new_status
+        self.status_tree.item(item_id, values=values)
         fif_path = Path(item_id)
         self.session_status[fif_path] = new_status
+        self.status_selection_var.set(new_status)
         if self.selected_session and self.selected_session.fif_path == fif_path:
             self._update_info_status_line(new_status)
-
         self.status_detail_var.set(
             f"Status for {values[0]} / {values[1]} set to {new_status}."
         )
+
+    def _destroy_status_editor(self) -> None:
+        if self.status_editor is not None:
+            self.status_editor.destroy()
+            self.status_editor = None
+            self.status_editor_var = None
+
+    def _sort_status_table(self, column: str, *, toggle: bool = True) -> None:
+        reverse = self._status_sort_reverse if self._status_sort_column == column else False
+        if toggle:
+            reverse = not reverse if self._status_sort_column == column else False
+        self._status_sort_column = column
+        self._status_sort_reverse = reverse
+
+        children = [
+            (self.status_tree.item(child, "values"), child) for child in self.status_tree.get_children("")
+        ]
+
+        def key_fn(item: tuple[tuple[str, str, str], str]) -> tuple[int, str] | str:
+            values, _ = item
+            if column == "subject":
+                return subject_sort_key(values[0])
+            if column == "status":
+                return status_sort_key(values[2])
+            return values[1].lower()
+
+        for index, (_, iid) in enumerate(sorted(children, key=key_fn, reverse=reverse)):
+            self.status_tree.move(iid, "", index)
 
     def _sync_status_selection(self, fif_path: Path) -> None:
         if not hasattr(self, "status_tree"):
