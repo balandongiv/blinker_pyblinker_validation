@@ -78,6 +78,9 @@ def import_annotations(
 
     zip_path = expected_zip_path(cvat_root, session)
     if not zip_path.exists():
+        logger.warning(
+            "No CVAT ZIP available for %s/%s at %s", session.subject_id, session.session_name, zip_path
+        )
         raise AnnotationImportError(f"Missing CVAT ZIP for {session.subject_id}/{session.session_name}: {zip_path}")
 
     with tempfile.TemporaryDirectory() as tmpdir:

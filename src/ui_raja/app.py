@@ -31,7 +31,11 @@ from tkinter import (
     messagebox,
 )
 
-from src.utils.annotations import annotations_to_frame, summarize_annotation_changes
+from src.utils.annotations import (
+    annotations_to_frame,
+    label_change_breakdown,
+    summarize_annotation_changes,
+)
 
 from src.ui_murat.annotation_io import (
     annotations_from_frame,
@@ -328,7 +332,8 @@ class RajaAnnotationApp:
         except AnnotationImportError as exc:
             self.annotation_frame = pd.DataFrame(columns=["onset", "duration", "description"])
             messagebox.showwarning("Annotations unavailable", str(exc))
-            self._log(str(exc))
+            annotation_source = f"Annotations unavailable ({exc})"
+            self._log(annotation_source)
 
         csv_frame = load_annotation_frame(self.selected_session.annotation_csv)
         if not csv_frame.empty:
@@ -578,6 +583,7 @@ class RajaAnnotationApp:
 
         updated_inside = annotations_to_frame(ann_manual)
         change_summary = summarize_annotation_changes(inside, updated_inside)
+        label_breakdown = label_change_breakdown(inside, updated_inside)
         has_changes = any(
             [change_summary.added, change_summary.removed, change_summary.changed]
         )
@@ -597,6 +603,24 @@ class RajaAnnotationApp:
             f"changed: {change_summary.changed}, total: {len(self.annotation_frame)})"
         )
         self._log(summary_msg)
+        detail_parts = []
+        if label_breakdown.added_counts:
+            added_detail = ", ".join(
+                f"{label} x{count}" for label, count in label_breakdown.added_counts.items()
+            )
+            detail_parts.append(f"Added by label: {added_detail}")
+        if label_breakdown.removed_counts:
+            removed_detail = ", ".join(
+                f"{label} x{count}" for label, count in label_breakdown.removed_counts.items()
+            )
+            detail_parts.append(f"Removed by label: {removed_detail}")
+        if label_breakdown.changed_labels:
+            changed_detail = ", ".join(
+                f"{old}->{new} x{count}" for (old, new), count in label_breakdown.changed_labels.items()
+            )
+            detail_parts.append(f"Relabeled: {changed_detail}")
+        if detail_parts:
+            self._log("; ".join(detail_parts))
         self.status_var.set(summary_msg)
 
     def _refresh_current_session(self) -> None:
