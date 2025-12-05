@@ -59,9 +59,11 @@ from .constants import (
     DEFAULT_DATA_ROOT,
     DEFAULT_PATH_PAIR_CONFIG,
     DEFAULT_SAMPLING_RATE,
+    DEFAULT_STATUS_STORE,
 )
 from .discovery import RajaDataset, SessionInfo
 from .path_pairs import PathPair, load_path_pairs
+from .status_store import StatusStore
 
 logger = logging.getLogger(__name__)
 
@@ -96,6 +98,7 @@ class RajaAnnotationApp:
         sampling_rate: float,
         path_pairs: list[PathPair] | None = None,
         selected_pair: str | None = None,
+        status_store_path: Path | None = None,
     ) -> None:
         self.data_root = data_root
         self.cvat_root = cvat_root
@@ -105,6 +108,8 @@ class RajaAnnotationApp:
             self.path_pairs = [PathPair("Provided paths", data_root, cvat_root)]
         self.active_pair_name = selected_pair or self.path_pairs[0].name
         self.dataset: RajaDataset | None = None
+
+        self.status_store = StatusStore(status_store_path or DEFAULT_STATUS_STORE)
 
         self.window = Tk()
         self.window.title("Raja Annotation Helper")
@@ -330,14 +335,17 @@ class RajaAnnotationApp:
     def _initialize_session_statuses(self) -> None:
         """Reset FIF status tracking for the active dataset."""
 
-        existing_status = self.session_status
+        existing_status = {path.resolve(): status for path, status in self.session_status.items()}
+        stored_status = self.status_store.load_for_root(self.data_root)
         self.session_status = {}
         if self.dataset is None:
             return
 
         for session in self.dataset.all_sessions():
-            self.session_status[session.fif_path] = existing_status.get(
-                session.fif_path, STATUS_OPTIONS[0]
+            resolved_fif = session.fif_path.resolve()
+            self.session_status[resolved_fif] = stored_status.get(
+                resolved_fif,
+                existing_status.get(resolved_fif, STATUS_OPTIONS[0]),
             )
 
     def _refresh_status_table(self) -> None:
@@ -346,11 +354,12 @@ class RajaAnnotationApp:
             return
 
         for session in self.dataset.all_sessions():
-            status = self.session_status.get(session.fif_path, STATUS_OPTIONS[0])
+            resolved_fif = session.fif_path.resolve()
+            status = self.session_status.get(resolved_fif, STATUS_OPTIONS[0])
             self.status_tree.insert(
                 "",
                 "end",
-                iid=str(session.fif_path),
+                iid=str(resolved_fif),
                 values=(session.subject_id, session.session_name, status),
             )
         if self._status_sort_column:
@@ -441,10 +450,14 @@ class RajaAnnotationApp:
     def _update_status(self, item_id: str, values: list[str], new_status: str) -> None:
         values[2] = new_status
         self.status_tree.item(item_id, values=values)
-        fif_path = Path(item_id)
+        fif_path = Path(item_id).resolve()
         self.session_status[fif_path] = new_status
+        self.status_store.update_status(self.data_root, fif_path, new_status)
         self.status_selection_var.set(new_status)
-        if self.selected_session and self.selected_session.fif_path == fif_path:
+        if (
+            self.selected_session
+            and self.selected_session.fif_path.resolve() == fif_path
+        ):
             self._update_info_status_line(new_status)
         self.status_detail_var.set(
             f"Status for {values[0]} / {values[1]} set to {new_status}."
@@ -482,7 +495,7 @@ class RajaAnnotationApp:
         if not hasattr(self, "status_tree"):
             return
 
-        item_id = str(fif_path)
+        item_id = str(fif_path.resolve())
         if self.status_tree.exists(item_id):
             self.status_tree.selection_set(item_id)
             self.status_tree.see(item_id)
@@ -605,7 +618,9 @@ class RajaAnnotationApp:
 
         raw = mne.io.read_raw_fif(self.selected_session.fif_path, preload=False)
         self.total_duration = raw.times[-1]
-        status_value = self.session_status.get(self.selected_session.fif_path, "Pending")
+        status_value = self.session_status.get(
+            self.selected_session.fif_path.resolve(), "Pending"
+        )
         summary = (
             f"FIF: {self.selected_session.fif_path}\n"
             f"Annotations: {len(self.annotation_frame)} rows\n"
@@ -911,6 +926,12 @@ def main(argv: Iterable[str] | None = None) -> None:
         default=None,
         help="Name of the path pair to activate on startup.",
     )
+    parser.add_argument(
+        "--status-store",
+        type=Path,
+        default=None,
+        help="Optional YAML file to persist FIF status selections.",
+    )
     args = parser.parse_args(list(argv) if argv is not None else None)
 
     logging.basicConfig(level=logging.INFO)
@@ -926,6 +947,7 @@ def main(argv: Iterable[str] | None = None) -> None:
         sampling_rate=args.sampling_rate,
         path_pairs=pairs,
         selected_pair=initial_pair,
+        status_store_path=args.status_store or DEFAULT_STATUS_STORE,
     )
     app.window.mainloop()
 
