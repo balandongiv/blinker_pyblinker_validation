@@ -1,0 +1,89 @@
+"""Annotation import helpers for Raja sessions."""
+
+from __future__ import annotations
+
+import json
+import logging
+import tempfile
+from pathlib import Path
+from typing import Optional
+
+import pandas as pd
+
+from raja_sequence.helper import load_ground_truth, restructure_blink_dataframe, unzip_file
+
+from .constants import ANNOTATION_COLUMNS, DEFAULT_SAMPLING_RATE
+from .discovery import SessionInfo
+
+logger = logging.getLogger(__name__)
+
+
+class AnnotationImportError(Exception):
+    """Raised when annotations cannot be imported for a session."""
+
+
+def expected_zip_path(cvat_root: Path, session: SessionInfo) -> Path:
+    return cvat_root / session.subject_id / "from_cvat" / f"{session.session_name}.zip"
+
+
+def load_shift_value(config_path: Path, session: SessionInfo) -> int:
+    if not config_path.exists():
+        logger.warning("Config file %s not found; using zero shift.", config_path)
+        return 0
+    try:
+        content = json.loads(config_path.read_text())
+        return int(content["data"][session.subject_id]["shift_cvat"][session.session_name])
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning("Could not read shift from %s: %s", config_path, exc)
+        return 0
+
+
+def build_annotation_frame(csv_path: Path, shift: int, sampling_rate: float) -> pd.DataFrame:
+    df_gt = load_ground_truth(str(csv_path), shift, sampling_rate)
+    df_gt = restructure_blink_dataframe(df_gt, sampling_rate)
+    if df_gt.empty:
+        return pd.DataFrame(columns=ANNOTATION_COLUMNS)
+
+    df_gt["start_sec"] = (df_gt["start"] / sampling_rate).abs()
+    df_gt["duration_seconds"] = df_gt["duration_seconds"].abs()
+
+    return pd.DataFrame(
+        {
+            "onset": df_gt["start_sec"].to_numpy(float),
+            "duration": df_gt["duration_seconds"].to_numpy(float),
+            "description": df_gt["blink_type"].astype(str).tolist(),
+        }
+    )
+
+
+def import_annotations(session: SessionInfo, cvat_root: Path, *, sampling_rate: float = DEFAULT_SAMPLING_RATE) -> pd.DataFrame:
+    """Import annotations from the CVAT ZIP and return a normalized frame."""
+
+    zip_path = expected_zip_path(cvat_root, session)
+    if not zip_path.exists():
+        raise AnnotationImportError(f"Missing CVAT ZIP for {session.subject_id}/{session.session_name}: {zip_path}")
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        unzip_file(str(zip_path), tmpdir)
+        csv_candidate: Optional[Path] = None
+        for candidate in Path(tmpdir).rglob("default-annotations-human-imagelabels.csv"):
+            csv_candidate = candidate
+            break
+        if csv_candidate is None:
+            raise AnnotationImportError("No default-annotations-human-imagelabels.csv found in ZIP")
+
+        shift_value = load_shift_value(Path("config_video_detail.json"), session)
+        frame = build_annotation_frame(csv_candidate, shift_value, sampling_rate)
+        return frame
+
+
+def ensure_annotations(session: SessionInfo, cvat_root: Path, *, sampling_rate: float = DEFAULT_SAMPLING_RATE) -> pd.DataFrame:
+    """Load existing annotations or import them from CVAT on first run."""
+
+    if session.annotation_csv.exists():
+        return pd.read_csv(session.annotation_csv)
+
+    frame = import_annotations(session, cvat_root, sampling_rate=sampling_rate)
+    frame.to_csv(session.annotation_csv, index=False)
+    logger.info("Imported annotations for %s/%s", session.subject_id, session.session_name)
+    return frame
