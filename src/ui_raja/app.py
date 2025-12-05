@@ -30,6 +30,7 @@ from tkinter import (
     Tk,
     messagebox,
 )
+from tkinter import ttk
 
 from src.utils.annotations import (
     annotations_to_frame,
@@ -95,6 +96,10 @@ class RajaAnnotationApp:
         self.plot_channel_mode = StringVar(value="selected")
         self.plot_duration_var = StringVar(value="")
         self.path_pair_var = StringVar(value=self.active_pair_name)
+        self.status_selection_var = StringVar(value="Pending")
+        self.status_detail_var = StringVar(value="Select a recording to update its status.")
+
+        self.session_status: dict[Path, str] = {}
 
         self.start_entry: Entry
         self.end_entry: Entry
@@ -104,6 +109,7 @@ class RajaAnnotationApp:
         self.annotation_filter: Listbox
         self.channel_entry: Entry
         self.duration_entry: Entry
+        self.status_tree: ttk.Treeview
 
         self.selected_session: SessionInfo | None = None
         self.annotation_frame = pd.DataFrame()
@@ -128,7 +134,20 @@ class RajaAnnotationApp:
                 command=lambda *_: self._on_pair_change(),
             ).pack(side=LEFT)
 
-        main = Frame(self.window)
+        notebook = ttk.Notebook(self.window)
+        notebook.pack(fill=BOTH, expand=True)
+
+        annotate_tab = Frame(notebook)
+        status_tab = Frame(notebook)
+
+        notebook.add(annotate_tab, text="Annotate")
+        notebook.add(status_tab, text="FIF Status")
+
+        self._build_annotation_tab(annotate_tab)
+        self._build_status_tab(status_tab)
+
+    def _build_annotation_tab(self, parent: Frame) -> None:
+        main = Frame(parent)
         main.pack(fill=BOTH, expand=True)
 
         # Subject list
@@ -235,10 +254,146 @@ class RajaAnnotationApp:
         self.history_text = Text(history_frame, height=8)
         self.history_text.pack(fill=BOTH, expand=True)
 
+    def _build_status_tab(self, parent: Frame) -> None:
+        Label(
+            parent,
+            text=(
+                "Track FIF recording status. Select a session to set its status to "
+                "Pending (default), Ongoing, or Complete."
+            ),
+            wraplength=600,
+            justify="left",
+        ).pack(anchor="w", padx=8, pady=(8, 4))
+
+        tree_frame = Frame(parent)
+        tree_frame.pack(fill=BOTH, expand=True, padx=8, pady=(0, 8))
+
+        columns = ("subject", "session", "status")
+        self.status_tree = ttk.Treeview(tree_frame, columns=columns, show="headings", height=15)
+        for column, heading in zip(columns, ["Subject", "Session", "Status"]):
+            self.status_tree.heading(column, text=heading)
+            self.status_tree.column(column, width=180 if column != "status" else 120, anchor="w")
+
+        scrollbar = Scrollbar(tree_frame, orient="vertical", command=self.status_tree.yview)
+        self.status_tree.configure(yscrollcommand=scrollbar.set)
+        self.status_tree.pack(side=LEFT, fill=BOTH, expand=True)
+        scrollbar.pack(side=RIGHT, fill=Y)
+
+        self.status_tree.bind("<<TreeviewSelect>>", lambda *_: self._on_status_tree_select())
+
+        control_frame = Frame(parent)
+        control_frame.pack(fill=X, padx=8, pady=(0, 8))
+
+        Label(control_frame, textvariable=self.status_detail_var, fg="green", wraplength=400).pack(
+            side=LEFT, padx=(0, 10)
+        )
+
+        OptionMenu(
+            control_frame,
+            self.status_selection_var,
+            "Pending",
+            "Ongoing",
+            "Complete",
+        ).pack(side=LEFT, padx=(0, 6))
+
+        Button(control_frame, text="Update Status", command=self._set_selected_status).pack(side=LEFT)
+
     def _log(self, message: str) -> None:
         self.history_text.insert(END, message + "\n")
         self.history_text.see(END)
         logger.info(message)
+
+    def _initialize_session_statuses(self) -> None:
+        """Reset FIF status tracking for the active dataset."""
+
+        existing_status = self.session_status
+        self.session_status = {}
+        if self.dataset is None:
+            return
+
+        for session in self.dataset.all_sessions():
+            self.session_status[session.fif_path] = existing_status.get(
+                session.fif_path, "Pending"
+            )
+
+    def _refresh_status_table(self) -> None:
+        self._clear_status_table()
+        if self.dataset is None:
+            return
+
+        for session in self.dataset.all_sessions():
+            status = self.session_status.get(session.fif_path, "Pending")
+            self.status_tree.insert(
+                "",
+                "end",
+                iid=str(session.fif_path),
+                values=(session.subject_id, session.session_name, status),
+            )
+
+    def _clear_status_table(self) -> None:
+        if hasattr(self, "status_tree"):
+            for child in self.status_tree.get_children():
+                self.status_tree.delete(child)
+        self.status_detail_var.set("Select a recording to update its status.")
+
+    def _on_status_tree_select(self) -> None:
+        selection = self.status_tree.selection()
+        if not selection:
+            self.status_selection_var.set("Pending")
+            self.status_detail_var.set("Select a recording to update its status.")
+            return
+
+        item_id = selection[0]
+        values = self.status_tree.item(item_id, "values")
+        if len(values) >= 3:
+            self.status_selection_var.set(values[2])
+            self.status_detail_var.set(
+                f"Selected {values[0]} / {values[1]} (status: {values[2]})."
+            )
+
+    def _set_selected_status(self) -> None:
+        selection = self.status_tree.selection()
+        if not selection:
+            messagebox.showinfo(
+                "No recording selected", "Please select a recording in the table to update its status."
+            )
+            return
+
+        new_status = self.status_selection_var.get()
+        item_id = selection[0]
+        values = list(self.status_tree.item(item_id, "values"))
+        if len(values) >= 3:
+            values[2] = new_status
+            self.status_tree.item(item_id, values=values)
+
+        fif_path = Path(item_id)
+        self.session_status[fif_path] = new_status
+        if self.selected_session and self.selected_session.fif_path == fif_path:
+            self._update_info_status_line(new_status)
+
+        self.status_detail_var.set(
+            f"Status for {values[0]} / {values[1]} set to {new_status}."
+        )
+
+    def _sync_status_selection(self, fif_path: Path) -> None:
+        if not hasattr(self, "status_tree"):
+            return
+
+        item_id = str(fif_path)
+        if self.status_tree.exists(item_id):
+            self.status_tree.selection_set(item_id)
+            self.status_tree.see(item_id)
+            self._on_status_tree_select()
+
+    def _update_info_status_line(self, status_value: str) -> None:
+        if not self.info_var.get():
+            return
+        lines = self.info_var.get().splitlines()
+        if lines and lines[-1].startswith("Status:"):
+            lines[-1] = f"Status: {status_value}"
+        else:
+            lines.append(f"Status: {status_value}")
+        self.info_var.set("\n".join(lines))
 
     def _pair_by_name(self, name: str) -> PathPair | None:
         for pair in self.path_pairs:
@@ -251,6 +406,7 @@ class RajaAnnotationApp:
         self.session_list.delete(0, END)
         self.info_var.set("Dataset unavailable for the selected path pair.")
         self.selected_session = None
+        self._clear_status_table()
 
     def _on_pair_change(self) -> None:
         self._activate_pair(self.path_pair_var.get())
@@ -272,7 +428,9 @@ class RajaAnnotationApp:
             self._clear_lists()
             return
 
+        self._initialize_session_statuses()
         self._populate_subjects()
+        self._refresh_status_table()
 
     def _populate_subjects(self) -> None:
         if self.dataset is None:
@@ -311,6 +469,7 @@ class RajaAnnotationApp:
         self.selected_session = session_info
         self.status_var.set(f"Selected {session_info.subject_id} / {session_info.session_name}")
         self._load_session_data()
+        self._sync_status_selection(session_info.fif_path)
 
     def _load_session_data(self) -> None:
         if self.selected_session is None or self.dataset is None:
@@ -343,11 +502,13 @@ class RajaAnnotationApp:
 
         raw = mne.io.read_raw_fif(self.selected_session.fif_path, preload=False)
         self.total_duration = raw.times[-1]
+        status_value = self.session_status.get(self.selected_session.fif_path, "Pending")
         summary = (
             f"FIF: {self.selected_session.fif_path}\n"
             f"Annotations: {len(self.annotation_frame)} rows\n"
             f"Annotation source: {annotation_source}\n"
-            f"Duration: {self.total_duration:.1f} seconds"
+            f"Duration: {self.total_duration:.1f} seconds\n"
+            f"Status: {status_value}"
         )
         self.info_var.set(summary)
         self.segment_status_var.set("")
