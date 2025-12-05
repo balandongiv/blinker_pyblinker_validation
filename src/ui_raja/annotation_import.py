@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 import logging
 import tempfile
+import shutil
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -56,8 +58,23 @@ def build_annotation_frame(csv_path: Path, shift: int, sampling_rate: float) -> 
     )
 
 
-def import_annotations(session: SessionInfo, cvat_root: Path, *, sampling_rate: float = DEFAULT_SAMPLING_RATE) -> pd.DataFrame:
-    """Import annotations from the CVAT ZIP and return a normalized frame."""
+def _backup_annotation_source(source: Path, session: SessionInfo) -> Path:
+    """Persist a backup of the original annotation alongside the FIF file."""
+
+    backup_dir = session.backups_dir
+    backup_dir.mkdir(exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    backup_name = f"{session.fif_path.stem}_{timestamp}{source.suffix}"
+    destination = backup_dir / backup_name
+    shutil.copy2(source, destination)
+    logger.info("Created annotation backup at %s", destination)
+    return destination
+
+
+def import_annotations(
+    session: SessionInfo, cvat_root: Path, *, sampling_rate: float = DEFAULT_SAMPLING_RATE
+) -> tuple[pd.DataFrame, Path]:
+    """Import annotations from the CVAT ZIP and return a normalized frame and source path."""
 
     zip_path = expected_zip_path(cvat_root, session)
     if not zip_path.exists():
@@ -74,16 +91,28 @@ def import_annotations(session: SessionInfo, cvat_root: Path, *, sampling_rate: 
 
         shift_value = load_shift_value(Path("config_video_detail.json"), session)
         frame = build_annotation_frame(csv_candidate, shift_value, sampling_rate)
-        return frame
+        return frame, zip_path
 
 
-def ensure_annotations(session: SessionInfo, cvat_root: Path, *, sampling_rate: float = DEFAULT_SAMPLING_RATE) -> pd.DataFrame:
-    """Load existing annotations or import them from CVAT on first run."""
+def ensure_annotations(
+    session: SessionInfo, cvat_root: Path, *, sampling_rate: float = DEFAULT_SAMPLING_RATE
+) -> tuple[pd.DataFrame, str]:
+    """Load annotations with a backup and describe their source."""
 
     if session.annotation_csv.exists():
-        return pd.read_csv(session.annotation_csv)
+        backup_path = _backup_annotation_source(session.annotation_csv, session)
+        frame = pd.read_csv(session.annotation_csv)
+        source = (
+            f"Existing FIF-directory annotations ({session.annotation_csv.name}); "
+            f"backup saved to {backup_path.name}"
+        )
+        return frame, source
 
-    frame = import_annotations(session, cvat_root, sampling_rate=sampling_rate)
+    frame, source_path = import_annotations(session, cvat_root, sampling_rate=sampling_rate)
+    backup_path = _backup_annotation_source(source_path, session)
     frame.to_csv(session.annotation_csv, index=False)
     logger.info("Imported annotations for %s/%s", session.subject_id, session.session_name)
-    return frame
+    source = (
+        f"CVAT ZIP import ({source_path.name}); backup saved to {backup_path.name}"
+    )
+    return frame, source

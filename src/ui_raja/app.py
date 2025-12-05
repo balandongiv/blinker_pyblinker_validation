@@ -243,13 +243,15 @@ class RajaAnnotationApp:
 
     def _load_session_data(self) -> None:
         assert self.selected_session is not None
+        annotation_source = "Annotations unavailable"
         try:
-            self.annotation_frame = ensure_annotations(
+            self.annotation_frame, annotation_source = ensure_annotations(
                 self.selected_session, self.cvat_root, sampling_rate=self.sampling_rate
             )
             self._log(
                 f"Loaded annotations for {self.selected_session.subject_id}/{self.selected_session.session_name}"
             )
+            self._log(f"Annotation source: {annotation_source}")
         except AnnotationImportError as exc:
             self.annotation_frame = pd.DataFrame(columns=["onset", "duration", "description"])
             messagebox.showwarning("Annotations unavailable", str(exc))
@@ -266,6 +268,7 @@ class RajaAnnotationApp:
         summary = (
             f"FIF: {self.selected_session.fif_path}\n"
             f"Annotations: {len(self.annotation_frame)} rows\n"
+            f"Annotation source: {annotation_source}\n"
             f"Duration: {self.total_duration:.1f} seconds"
         )
         self.info_var.set(summary)

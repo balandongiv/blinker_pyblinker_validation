@@ -23,6 +23,12 @@ class SessionInfo:
 
         return self.fif_path.with_suffix(".csv")
 
+    @property
+    def backups_dir(self) -> Path:
+        """Directory for annotation backups alongside the FIF file."""
+
+        return self.fif_path.parent / "backups"
+
 
 class RajaDataset:
     """Index of available Raja sessions grouped by subject."""
