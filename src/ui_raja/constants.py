@@ -32,7 +32,18 @@ PRIMARY_FIF_CANDIDATES = ["ear_eog.fif", "ear_eog.fif.gz"]
 # Default channel picks used when launching the Raja browser.
 DEFAULT_CHANNEL_PICKS = [
     "EAR-avg_ear",
-    "eog_vert_right",
-    "eog_vert_left",
-    "EEG--E8",
+    "EOG-EEG-eog_vert_right",
+    "EOG-EEG-eog_vert_left",
+    "EEG-E8",
 ]
+
+# Allow common shorthand channel names to map onto the canonical FIF labels so
+# users can type friendlier names without hitting validation warnings.
+CHANNEL_ALIASES: dict[str, str] = {
+    "eog_vert_right": "EOG-EEG-eog_vert_right",
+    "eog_vert_left": "EOG-EEG-eog_vert_left",
+    "eog_hor_right": "EOG-EEG-eog_hor_right",
+    "eog_hor_left": "EOG-EEG-eog_hor_left",
+    "eeg--e8": "EEG-E8",
+    "eeg-e8": "EEG-E8",
+}

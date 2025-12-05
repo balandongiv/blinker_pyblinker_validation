@@ -47,6 +47,7 @@ from src.ui_murat.segment_utils import (
 
 from .annotation_import import AnnotationImportError, ensure_annotations
 from .constants import (
+    CHANNEL_ALIASES,
     DEFAULT_CHANNEL_PICKS,
     DEFAULT_CVAT_ROOT,
     DEFAULT_DATA_ROOT,
@@ -407,7 +408,27 @@ class RajaAnnotationApp:
             )
             return []
 
-        missing = [channel for channel in requested if channel not in raw.ch_names]
+        lower_raw = {name.lower(): name for name in raw.ch_names}
+        aliases = {alias.lower(): target for alias, target in CHANNEL_ALIASES.items()}
+
+        resolved: list[str] = []
+        missing: list[str] = []
+
+        for channel in requested:
+            if channel in raw.ch_names:
+                resolved.append(channel)
+                continue
+
+            lower = channel.lower()
+            if lower in aliases and aliases[lower] in raw.ch_names:
+                resolved.append(aliases[lower])
+                continue
+
+            if lower in lower_raw:
+                resolved.append(lower_raw[lower])
+                continue
+
+            missing.append(channel)
         if missing:
             available_preview = ", ".join(raw.ch_names[:10])
             if len(raw.ch_names) > 10:
@@ -423,7 +444,7 @@ class RajaAnnotationApp:
             )
             return []
 
-        return requested
+        return resolved
 
     def _update_channel_entry_state(self) -> None:
         """Enable or disable channel entry based on the selected plot mode."""
