@@ -312,6 +312,10 @@ class RajaAnnotationApp:
         if self.selected_session is None or self.dataset is None:
             messagebox.showwarning("No session", "Please select a valid session.")
             return
+        # Reset UI fields for the newly selected session so ranges default to the
+        # full recording unless the user specifies otherwise.
+        self.start_entry.delete(0, END)
+        self.end_entry.delete(0, END)
         annotation_source = "Annotations unavailable"
         try:
             self.annotation_frame, annotation_source = ensure_annotations(
@@ -364,45 +368,36 @@ class RajaAnnotationApp:
 
         start_raw = self.start_entry.get().strip()
         end_raw = self.end_entry.get().strip()
-        if not start_raw and not end_raw:
-            return 0.0, float(self.total_duration)
-
-        if start_raw and not end_raw:
-            try:
-                start = float(start_raw)
-            except ValueError:
-                messagebox.showerror(
-                    "Invalid input", "Start must be a number when End is left blank."
-                )
-                return None
-
-            if start < 0 or (self.total_duration and start >= self.total_duration):
-                messagebox.showerror(
-                    "Invalid range",
-                    ("Ensure 0 <= start < total duration when omitting the End time."),
-                )
-                return None
-
-            return start, float(self.total_duration)
-
-        if not start_raw and end_raw:
-            messagebox.showerror(
-                "Invalid input",
-                "Provide a Start time or leave both fields blank to use the full recording.",
-            )
+        try:
+            start = float(start_raw) if start_raw else 0.0
+        except ValueError:
+            messagebox.showerror("Invalid input", "Start must be a number if provided.")
             return None
 
         try:
-            start = float(start_raw)
-            end = float(end_raw)
+            end = float(end_raw) if end_raw else float(self.total_duration)
         except ValueError:
-            messagebox.showerror("Invalid input", "Start and End must be numbers.")
+            messagebox.showerror("Invalid input", "End must be a number if provided.")
             return None
 
-        if start < 0 or end <= start or (self.total_duration and end > self.total_duration):
+        if start < 0 or (self.total_duration and start >= self.total_duration):
             messagebox.showerror(
                 "Invalid range",
-                "Ensure 0 <= start < end and the end does not exceed the recording length.",
+                "Ensure the start time is within the recording (0 <= start < total duration).",
+            )
+            return None
+
+        if end <= start:
+            messagebox.showerror(
+                "Invalid range",
+                "Ensure end is greater than start or leave End blank to use the full recording.",
+            )
+            return None
+
+        if self.total_duration and end > self.total_duration:
+            messagebox.showerror(
+                "Invalid range",
+                "End time cannot exceed the recording length; leave it blank to use the full recording.",
             )
             return None
 
@@ -557,6 +552,15 @@ class RajaAnnotationApp:
         skip_labels = self._selected_labels_to_skip()
         ann_inside, inside, outside, _ = prepare_annotations_for_window(
             frame, start, end, skip_labels
+        )
+
+        self._log(
+            f"Launching browser with {len(ann_inside)} annotations in view "
+            f"({len(frame)} total loaded)."
+        )
+        self.segment_status_var.set(
+            f"Segment {start:.1f}-{end:.1f} s status: {status}; "
+            f"annotations in view: {len(ann_inside)}"
         )
 
         picks = self._determine_channel_picks(raw)
