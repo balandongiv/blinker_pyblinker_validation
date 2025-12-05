@@ -23,6 +23,7 @@ from tkinter import (
     Label,
     Listbox,
     Radiobutton,
+    OptionMenu,
     Scrollbar,
     StringVar,
     Text,
@@ -51,9 +52,11 @@ from .constants import (
     DEFAULT_CHANNEL_PICKS,
     DEFAULT_CVAT_ROOT,
     DEFAULT_DATA_ROOT,
+    DEFAULT_PATH_PAIR_CONFIG,
     DEFAULT_SAMPLING_RATE,
 )
 from .discovery import RajaDataset, SessionInfo
+from .path_pairs import PathPair, load_path_pairs
 
 logger = logging.getLogger(__name__)
 
@@ -61,11 +64,23 @@ logger = logging.getLogger(__name__)
 class RajaAnnotationApp:
     """Tkinter GUI controller for Raja annotations."""
 
-    def __init__(self, data_root: Path, cvat_root: Path, *, sampling_rate: float) -> None:
+    def __init__(
+        self,
+        data_root: Path,
+        cvat_root: Path,
+        *,
+        sampling_rate: float,
+        path_pairs: list[PathPair] | None = None,
+        selected_pair: str | None = None,
+    ) -> None:
         self.data_root = data_root
         self.cvat_root = cvat_root
         self.sampling_rate = sampling_rate
-        self.dataset = RajaDataset(self.data_root)
+        self.path_pairs = path_pairs or [PathPair("Provided paths", data_root, cvat_root)]
+        if not self.path_pairs:
+            self.path_pairs = [PathPair("Provided paths", data_root, cvat_root)]
+        self.active_pair_name = selected_pair or self.path_pairs[0].name
+        self.dataset: RajaDataset | None = None
 
         self.window = Tk()
         self.window.title("Raja Annotation Helper")
@@ -75,6 +90,7 @@ class RajaAnnotationApp:
         self.segment_status_var = StringVar(value="")
         self.plot_channel_mode = StringVar(value="selected")
         self.plot_duration_var = StringVar(value="")
+        self.path_pair_var = StringVar(value=self.active_pair_name)
 
         self.start_entry: Entry
         self.end_entry: Entry
@@ -90,12 +106,23 @@ class RajaAnnotationApp:
         self.total_duration: float | None = None
 
         self._build_ui()
-        self._populate_subjects()
+        self._activate_pair(self.path_pair_var.get())
 
     def _build_ui(self) -> None:
         header = Frame(self.window)
         header.pack(side=TOP, fill=X)
         Label(header, textvariable=self.status_var, fg="blue").pack(side=LEFT, padx=5, pady=5)
+
+        if self.path_pairs:
+            pair_frame = Frame(header)
+            pair_frame.pack(side=RIGHT, padx=5)
+            Label(pair_frame, text="Path pair:").pack(side=LEFT)
+            OptionMenu(
+                pair_frame,
+                self.path_pair_var,
+                *[pair.name for pair in self.path_pairs],
+                command=lambda *_: self._on_pair_change(),
+            ).pack(side=LEFT)
 
         main = Frame(self.window)
         main.pack(fill=BOTH, expand=True)
@@ -209,7 +236,43 @@ class RajaAnnotationApp:
         self.history_text.see(END)
         logger.info(message)
 
+    def _pair_by_name(self, name: str) -> PathPair | None:
+        for pair in self.path_pairs:
+            if pair.name == name:
+                return pair
+        return None
+
+    def _clear_lists(self) -> None:
+        self.subject_list.delete(0, END)
+        self.session_list.delete(0, END)
+        self.info_var.set("Dataset unavailable for the selected path pair.")
+        self.selected_session = None
+
+    def _on_pair_change(self) -> None:
+        self._activate_pair(self.path_pair_var.get())
+
+    def _activate_pair(self, pair_name: str) -> None:
+        pair = self._pair_by_name(pair_name) or self.path_pairs[0]
+        self.path_pair_var.set(pair.name)
+        self.data_root = pair.data_root
+        self.cvat_root = pair.cvat_root
+        self.active_pair_name = pair.name
+        self.status_var.set(
+            f"Using path pair '{pair.name}' (data: {self.data_root}, CVAT: {self.cvat_root})"
+        )
+        try:
+            self.dataset = RajaDataset(self.data_root)
+        except FileNotFoundError as exc:
+            messagebox.showerror("Dataset unavailable", str(exc))
+            self.dataset = None
+            self._clear_lists()
+            return
+
+        self._populate_subjects()
+
     def _populate_subjects(self) -> None:
+        if self.dataset is None:
+            return
         self.subject_list.delete(0, END)
         for subject_id in self.dataset.subjects():
             self.subject_list.insert(END, subject_id)
@@ -218,6 +281,8 @@ class RajaAnnotationApp:
             self._handle_subject_selection()
 
     def _handle_subject_selection(self) -> None:
+        if self.dataset is None:
+            return
         selection = self.subject_list.curselection()
         if not selection:
             return
@@ -231,6 +296,8 @@ class RajaAnnotationApp:
             self._handle_session_selection()
 
     def _handle_session_selection(self) -> None:
+        if self.dataset is None:
+            return
         selection = self.session_list.curselection()
         subject_sel = self.subject_list.curselection()
         if not selection or not subject_sel:
@@ -242,7 +309,9 @@ class RajaAnnotationApp:
         self._load_session_data()
 
     def _load_session_data(self) -> None:
-        assert self.selected_session is not None
+        if self.selected_session is None or self.dataset is None:
+            messagebox.showwarning("No session", "Please select a valid session.")
+            return
         annotation_source = "Annotations unavailable"
         try:
             self.annotation_frame, annotation_source = ensure_annotations(
@@ -505,16 +574,26 @@ class RajaAnnotationApp:
 
         updated_inside = annotations_to_frame(ann_manual)
         change_summary = summarize_annotation_changes(inside, updated_inside)
-        if not any([change_summary.added, change_summary.removed, change_summary.changed]):
-            self._log("No annotation changes detected; skipping save.")
+        has_changes = any(
+            [change_summary.added, change_summary.removed, change_summary.changed]
+        )
+        if not has_changes:
+            message = "No annotation changes detected; skipping save."
+            self._log(message)
+            self.status_var.set(message)
             return
 
         merged = merge_updated_annotations(updated_inside, outside)
         save_annotations(self.selected_session.annotation_csv, merged)
         self.annotation_frame = merged
-        self._log(
-            f"Saved annotations for {self.selected_session.subject_id}/{self.selected_session.session_name}"
+        summary_msg = (
+            f"Saved segment {start:.1f}-{end:.1f} s for "
+            f"{self.selected_session.subject_id}/{self.selected_session.session_name} "
+            f"(added: {change_summary.added}, removed: {change_summary.removed}, "
+            f"changed: {change_summary.changed}, total: {len(self.annotation_frame)})"
         )
+        self._log(summary_msg)
+        self.status_var.set(summary_msg)
 
     def _refresh_current_session(self) -> None:
         if self.selected_session is None:
@@ -528,11 +607,34 @@ def main(argv: Iterable[str] | None = None) -> None:
     parser.add_argument("--data-root", type=Path, default=DEFAULT_DATA_ROOT)
     parser.add_argument("--cvat-root", type=Path, default=DEFAULT_CVAT_ROOT)
     parser.add_argument("--sampling-rate", type=float, default=DEFAULT_SAMPLING_RATE)
+    parser.add_argument(
+        "--path-pairs",
+        type=Path,
+        default=DEFAULT_PATH_PAIR_CONFIG,
+        help="Optional YAML file with selectable data_root/cvat_root pairs.",
+    )
+    parser.add_argument(
+        "--pair-name",
+        type=str,
+        default=None,
+        help="Name of the path pair to activate on startup.",
+    )
     args = parser.parse_args(list(argv) if argv is not None else None)
 
     logging.basicConfig(level=logging.INFO)
 
-    app = RajaAnnotationApp(args.data_root, args.cvat_root, sampling_rate=args.sampling_rate)
+    pairs = load_path_pairs(args.path_pairs) if args.path_pairs else []
+    cli_pair = PathPair("CLI provided", args.data_root, args.cvat_root)
+    pairs.append(cli_pair)
+    initial_pair = args.pair_name or pairs[0].name
+
+    app = RajaAnnotationApp(
+        args.data_root,
+        args.cvat_root,
+        sampling_rate=args.sampling_rate,
+        path_pairs=pairs,
+        selected_pair=initial_pair,
+    )
     app.window.mainloop()
 
 

@@ -20,6 +20,11 @@ DEFAULT_CVAT_ROOT = (
     / "cvat_zip_final"
 )
 
+# Path pair configuration used to present selectable data/CVAT roots in the UI.
+DEFAULT_PATH_PAIR_CONFIG = (
+    Path(__file__).resolve().parents[2] / "config" / "raja_path_pairs.yaml"
+)
+
 ANNOTATION_COLUMNS = ["onset", "duration", "description"]
 
 # Default video sampling rate (frames per second) for converting CVAT frame
