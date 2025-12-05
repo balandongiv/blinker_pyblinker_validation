@@ -39,8 +39,8 @@ import mne
 import pandas as pd
 
 from src.test_helper import annotations_to_frame, load_raw_with_annotations
-from src.ui.annotation_io import annotations_from_frame
-from src.ui.segment_utils import merge_updated_annotations, prepare_annotations_for_window
+from src.ui_murat.annotation_io import annotations_from_frame
+from src.ui_murat.segment_utils import merge_updated_annotations, prepare_annotations_for_window
 
 DATA_DIR = Path(__file__).parent
 INPUT_CSV = DATA_DIR / "annotations_input.csv"

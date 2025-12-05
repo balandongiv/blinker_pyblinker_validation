@@ -1,0 +1,1206 @@
+{
+  "general_information": {
+    "description": "This JSON contains information about different sessions extracted from xml.shift_all is for combining all data into single file. The frame video is extracted using the read_mov_nframe. The shift_second_video and shift_third_video is use for combine and align the EAR and EOG data",
+    "ear_ec_threshold": "The threshold is based on the eye close and eye opening percentage. We used this threshold to automatically label portion of duration as eye close in md file. However, using this hard threshold is not bullet proof, and different file even for the same subject will have diff ideal threshold value.",
+    "date_created": "2024-08-30",
+    "version": "1.0",
+    "about_append_complete": "1.0"
+  },
+  "data":{
+  "S1": {
+    "ear_data": {
+      "first": "S01_20170519_043933.pkl",
+      "second": "S01_20170519_043933_2.pkl",
+      "third": "S01_20170519_043933_3.pkl"
+    },
+    "frame_video": {
+      "S01_20170519_043933": 53947,
+      "S01_20170519_043933_2": 53969,
+      "S01_20170519_043933_3": 53969
+    },
+    "shift_cvat": {
+      "S01_20170519_043933":   5,
+      "S01_20170519_043933_2": 5,
+      "S01_20170519_043933_3": 5,
+      "note":                  "I have cross on 19/2/2025 9.58 AM, the value 5,5,5 is working",
+      "note_S01_20170519_043933": "value 5 work with 538.03, 929.57,930.27",
+        "note_S01_20170519_043933_2": "on this morning i found 5 ni ok dgn 298.1, 326.13 ",
+        "note_S01_20170519_043933_3": "5 work with 180.37, 266.5,40 "
+    },
+    "ear_ec_threshold": {
+      "S01_20170519_043933": 40,
+      "S01_20170519_043933_2": 40,
+      "S01_20170519_043933_3": 40,
+      "note": "20 is accepted"
+    },
+    "fif_path": "S1.fif",
+    "shift_first_video": {
+      "shift_val": -2,
+      "start_time": 1032,
+      "notes": ""
+    },
+    "shift_second_video": {
+      "shift_val": 19,
+      "start_time": 156,
+      "notes": " 9 Dec 2024: While using value 19 show good result as shown in 156s, but,there is slight misalignment at 297s"
+    },
+    "shift_third_video": {
+      "shift_val": 39,
+      "start_time": 400,
+      "notes": "9 Dec 2024: While use value 39 show good result, but at 608s there is misalignment. But we will take the value of 39"
+    },
+    "shift_all": {
+      "first_second": 35,
+      "second_third": 31,
+      "notes": "Check peak at 2574 (FS:31), 3476 (FS:31), 3562 (FS:31), 4348 (FS:35), 5210 (ST:31)"
+    },
+    "videoEndTime": {
+      "first": 1798.447005,
+      "second": 1799.159417
+    },
+    "start_time": 4348,
+    "general_notes": "In mne viewer, I did not select region 720 for the 1st file.Check peak at 2574 (FS:31), 3476 (FS:31), 3562 (FS:31), 4348 (FS:35), 5210 (ST:31)"
+  },
+  "S2": {
+    "ear_data": {
+      "first": "TEST_20170601_042544.pkl",
+      "second": "TEST_20170601_042544_2.pkl",
+      "third": "TEST_20170601_042544_3.pkl"
+    },
+    "frame_video": {
+      "TEST_20170601_042544": 53963,
+      "TEST_20170601_042544_2": 53969,
+      "TEST_20170601_042544_3": 50062
+    },
+    "shift_cvat": {
+      "TEST_20170601_042544": 7,
+      "TEST_20170601_042544_2": 6,
+      "TEST_20170601_042544_3": 5,
+      "note_TEST_20170601_042544": "TEST_20170601_042544 will use 7 and is verified using mne report",
+        "note_TEST_20170601_042544_2": "use 6, but mcm pelik pula di 45.0,66.77 imply mcm 5 lg sesuai. tp ok at 36.23, 1.07",
+        "note_TEST_20170601_042544_3": "lets try with 5, and its work for 5.07, 29.0, 41.97,68.9 "
+    },
+    "ear_ec_threshold": {
+      "TEST_20170601_042544": 40,
+      "TEST_20170601_042544_2": 40,
+      "TEST_20170601_042544_3":40,
+      "note": "20 is accepted"
+    },
+    "fif_path": "S2.fif",
+    "shift_first_video": {
+      "shift_val": -2,
+      "start_time": 0,
+      "notes": ""
+    },
+    "shift_second_video": {
+      "shift_val": 20,
+      "start_time": 414,
+      "notes": "9 December 2024: we will use the value 20"
+    },
+    "shift_third_video": {
+      "shift_val": 42,
+      "start_time": 406,
+      "notes": "9 December 2024: we will use the value 42"
+    },
+    "shift_all": {
+      "first_second": 34,
+      "second_third": 30,
+      "start_time": 0,
+      "notes": "1586(FS 34) 1816 (35),3728(ST 32),4516 (ST 30)"
+    },
+    "videoEndTime": {
+      "first": 1798.9726,
+      "second": 1799.152369
+    },
+    "start_time":4516,
+    "general_notes": ""
+  },
+  "S3": {
+    "ear_data": {
+      "first": "S03_20170605_033654.pkl",
+      "second": "S03_20170605_033654_2.pkl",
+      "third": "S03_20170605_033654_3.pkl"
+    },
+    "frame_video": {
+      "S03_20170605_033654": 53971,
+      "S03_20170605_033654_2": 53969,
+      "S03_20170605_033654_3": 43598
+    },
+    "shift_cvat": {
+      "S03_20170605_033654": 9,
+      "S03_20170605_033654_2": 5,
+      "S03_20170605_033654_3": 5,
+      "note": "I have cross check the value 9, 5, and the 5. but lets verified with image report",
+      "note_S03_20170605_033654": "value 9 work with 42.1, 48.27,62.23,291.87",
+      "note_S03_20170605_033654_2": "use 5 where it work like a charm",
+        "note_S03_20170605_033654_3": "use 5 and it work with 70.43,94.53,124.8,140.67,177.83"
+    },
+    "ear_ec_threshold": {
+      "S03_20170605_033654": 30,
+      "S03_20170605_033654_2": 30,
+      "S03_20170605_033654_3": 30,
+      "note": "30 is accepted"
+    },
+    "fif_path": "S3.fif",
+    "shift_first_video": {
+      "shift_val": -4,
+      "start_time": 1300,
+      "notes": ""
+    },
+    "shift_second_video": {
+      "shift_val": 18,
+      "start_time": 402,
+      "notes": "9 December 2024: we will use the value 18"
+    },
+    "shift_third_video": {
+      "shift_val": 40,
+      "start_time": 48,
+      "notes": "9 December 2024: we will use the value 40"
+    },
+    "shift_all": {
+      "zero_first": 3,
+      "first_second": 37,
+      "second_third": 30,
+      "start_time": 0,
+      "notes": "418 (zf 3).1478 (zf 3),1800 (fs 37),3354, 4684(30)"
+    },
+    "videoEndTime": {
+      "first": 1799.236743,
+      "second": 1799.165322
+    },
+    "start_time": 4684,
+    "general_notes": " I just notice, in some case, we need to delete n first frames of the EAR to make a good alignment."
+  },
+  "S4": {
+    "ear_data": {
+      "first": "S04_20170606_045500.pkl",
+      "second": "S04_20170606_045500_2.pkl",
+      "third": "S04_20170606_045500_3.pkl"
+    },
+    "frame_video": {
+      "S04_20170606_045500": 53969,
+      "S04_20170606_045500_2": 53969,
+      "S04_20170606_045500_3": 53969
+
+    },
+    "shift_cvat": {
+      "S04_20170606_045500": 8,
+      "S04_20170606_045500_2": 5,
+      "S04_20170606_045500_3": 6,
+      "note": "I have cross check 8,5,6 via graphical inspection and now it shud be align as per the side note below",
+        "note_S04_20170606_045500": "value 8 work with 5.924.07, 22.93",
+        "note_S04_20170606_045500_2": " 5 work with 40.2, 110.03,91.73,99.07",
+      "note_S04_20170606_045500_3": "for 6, work with 9.4, 9.93,12.23"
+    },
+    "ear_ec_threshold": {
+      "S04_20170606_045500": 50,
+      "S04_20170606_045500_2": 50,
+      "S04_20170606_045500_3": 50,
+      "note": "Confirm we will use 50"
+    },
+    "fif_path": "S4.fif",
+    "shift_first_video": {
+      "shift_val": -3,
+      "start_time": 0,
+      "notes": ""
+    },
+    "shift_second_video": {
+      "shift_val": 18,
+      "start_time": 468,
+      "notes": "9 December 2024: we will use the value 18"
+    },
+    "shift_third_video": {
+      "shift_val": 41,
+      "start_time": 48,
+      "notes": "9 December 2024: we will use the value 41"
+    },
+    "shift_all": {
+      "first_second": 18,
+      "second_third": 18,
+      "start_time": 0,
+      "notes": ""
+    },
+    "videoEndTime": {
+      "first": 1799.168493,
+      "second": 1799.161132
+    },
+    "start_time": 468,
+    "general_notes": ""
+  },
+  "S5": {
+    "ear_data": {
+      "first": "S05_20170607_032937.pkl",
+      "second": "S05_20170607_032937_2.pkl",
+      "third": "S05_20170607_032937_3.pkl"
+    },
+    "frame_video": {
+      "S05_20170607_032937": 53955,
+      "S05_20170607_032937_2": 53969,
+      "S05_20170607_032937_3": 37934
+    },
+    "shift_cvat": {
+      "S05_20170607_032937": "FALSE",
+      "S05_20170607_032937_2": "FALSE",
+      "S05_20170607_032937_3": "FALSE",
+      "note": "",
+        "note_S05_20170607_032937": "im still not satisfied dgn value 8 and 9.value 8 work with 7.13::19.93, 1012.93. but mcm kurang 1 unit for 1955.07 (batch 2) no yet confirm as I need more image to confrim",
+        "note_S05_20170607_032937_2": " "
+    },
+    "ear_ec_threshold": {
+      "S05_20170607_032937": 30,
+      "S05_20170607_032937_2": 30,
+      "S05_20170607_032937_3": 30,
+      "issue": "  "
+
+    },
+    "fif_path": "S5.fif",
+    "shift_first_video": {
+      "shift_val": -3,
+      "start_time": 976,
+      "notes": ""
+    },
+    "shift_second_video": {
+      "shift_val": 18,
+      "start_time": 682,
+      "notes": "9 December 2024: we will use the value 18"
+    },
+    "shift_third_video": {
+      "shift_val": 41,
+      "start_time": 48,
+      "notes": "9 December 2024: we will use the value 41"
+    },
+    "shift_all": {
+      "first_second": 18,
+      "second_third": 18,
+      "start_time": 0,
+      "notes": ""
+    },
+    "videoEndTime": {
+      "first": 1798.700128,
+      "second": 1799.180431
+    },
+    "start_time": 682,
+    "general_notes": ""
+  },
+  "S6": {
+    "ear_data": {
+      "first": "S06_20170817_034716.pkl",
+      "second": "S06_20170817_034716_2.pkl",
+      "third": "S06_20170817_034716_3.pkl"
+    },
+    "frame_video": {
+      "S06_20170817_034716": 53945,
+      "S06_20170817_034716_2": 53969,
+      "S06_20170817_034716_3": 42684
+    },
+    "shift_cvat": {
+      "S06_20170817_034716": 8,
+      "S06_20170817_034716_2": 5,
+      "S06_20170817_034716_3": 5,
+      "note": "",
+      "note_S06_20170817_034716": "what make me confident with selecting value 8 is the blink patten at 306.70s(9208) and 306.90s(9215)..value 8 work with 7.16,98.5,125.7",
+      "note_S06_20170817_034716_2": " 5 work with min_555.77(1678), min_58.07 (1747),min_71.73 (2157),min_88.60:, 66.67 (mcm lag 1),125.6 (mcm lag 1)",
+      "note_S06_20170817_034716_3": " 5 work with 29.2 (881), 75.13 (2259),77.13 (2319), 157.17 (4720)"
+    },
+    "ear_ec_threshold": {
+      "S06_20170817_034716": 40,
+      "S06_20170817_034716_2": 40,
+      "S06_20170817_034716_3": 40,
+      "note": "40 is accepted"
+    },
+    "fif_path": "S6.fif",
+    "shift_first_video": {
+      "shift_val": -3,
+      "start_time": 1036,
+      "notes": ""
+    },
+    "shift_second_video": {
+      "shift_val": 20,
+      "start_time": 48,
+      "notes": "9 December 2024: we will use the value 20"
+    },
+    "shift_third_video": {
+      "shift_val": 41,
+      "start_time": 74,
+      "notes": "9 December 2024: we will use the value 41"
+    },
+    "shift_all": {
+      "first_second": 20,
+      "second_third": 20,
+      "start_time": 0,
+      "notes": ""
+    },
+    "videoEndTime": {
+      "first": 1798.364485,
+      "second": 1799.160567
+    },
+    "start_time": 48,
+    "general_notes": ""
+  },
+  "S7": {
+    "ear_data": {
+      "first": "S07_20170927_055215.pkl",
+      "second": "S07_20170927_055215_2.pkl",
+      "third": "S07_20170927_055215_3.pkl"
+    },
+    "frame_video": {
+      "S07_20170927_055215": 53971,
+      "S07_20170927_055215_2": 53969,
+      "S07_20170927_055215_3": 51526
+    },
+    "shift_cvat": {
+      "S07_20170927_055215": 7,
+      "S07_20170927_055215_2": 5,
+      "S07_20170927_055215_3": 50000,
+      "note": "yet to check anything",
+      "note_S07_20170927_055215": "baru check and the value 7 work with 21.4,39.7, 47.53",
+      "note_S07_20170927_055215_2": " 5  should  work with 57.53, 124.83, 157.7",
+      "note_S07_20170927_055215_3": "5 ni, ok lepas kena cross check dgn 33.5, 37.77,57.7"
+    },
+    "ear_ec_threshold": {
+      "S07_20170927_055215": 20,
+      "S07_20170927_055215_2": 40,
+      "S07_20170927_055215_3": 40,
+      "note": "40 is accepted"
+    },
+    "fif_path": "S7.fif",
+    "shift_first_video": {
+      "shift_val": 498,
+      "start_time": 390,
+      "notes": "Good to go"
+    },
+    "shift_second_video": {
+      "shift_val": 21,
+      "start_time": 48,
+      "notes": "9 December 2024: we will use the value 21"
+    },
+    "shift_third_video": {
+      "shift_val": 42,
+      "start_time": 52,
+      "notes": "9 December 2024: we will use the value 42"
+    },
+    "shift_all": {
+      "first_second": 21,
+      "second_third": 21,
+      "start_time": 0,
+      "notes": ""
+    },
+    "videoEndTime": {
+      "first": 1799.247653,
+      "second": 1799.166343
+    },
+    "start_time": 48,
+    "general_notes": ""
+  },
+    "S10": {
+      "ear_data": {
+        "first": "S23_20181226_042222.pkl",
+        "second": "S23_20181226_042222_2.pkl",
+        "third": "S23_20181226_042222_3.pkl"
+      },
+      "frame_video": {
+        "S23_20181226_042222": 53971,
+        "S23_20181226_042222_2": 53969,
+        "S23_20181226_042222_3": 51526
+      },
+      "shift_cvat": {
+        "S23_20181226_042222": 5,
+        "S23_20181226_042222_2": 5,
+        "S23_20181226_042222_3": 5,
+        "note": "",
+        "note_S23_20181226_042222": "value 5 has been crosscheck with 628.03,712.67,787.07",
+        "note_S23_20181226_042222_2": "value 5 work with 25.7s,39.07,95.07, 335.40",
+        "note_S23_20181226_042222_3": "value 5 work with 11.23,  82.70, 372.73, 380.4"
+      },
+      "ear_ec_threshold": {
+        "S23_20181226_042222": 40,
+        "S23_20181226_042222_2": 50,
+        "S23_20181226_042222_3": 50,
+        "note": "40 is accepted"
+      },
+      "fif_path": "S10.fif",
+      "shift_first_video": {
+        "shift_val": 0,
+        "start_time": 0,
+        "notes": ""
+      },
+      "shift_second_video": {
+        "shift_val": 23,
+        "start_time": 0,
+        "notes": "Good to go"
+      },
+      "shift_third_video": {
+        "shift_val": 46,
+        "start_time": 0,
+        "notes": ""
+      },
+      "shift_all": {
+        "first_second": 0,
+        "second_third": 0,
+        "start_time": 0,
+        "notes": ""
+      },
+      "videoEndTime": {
+        "first": 1799.119484,
+        "second": 1799.164024
+      },
+      "start_time": 0,
+      "general_notes": ""
+    },
+  "S11": {
+    "ear_data": {
+      "first": "S24_20181227_034657.pkl",
+      "second": "S24_20181227_034657_2.pkl",
+      "third": "S24_20181227_034657_3.pkl"
+    },
+    "frame_video": {
+      "S24_20181227_034657": 53959,
+      "S24_20181227_034657_2": 53969,
+      "S24_20181227_034657_3": 51734
+    },
+    "shift_cvat": {
+      "S24_20181227_034657": 5,
+      "S24_20181227_034657_2": "FALSE",
+      "S24_20181227_034657_3": "FALSE",
+        "note": "",
+        "note_S24_20181227_034657": "value 5 work with 23.67, 223.1, 359.77",
+        "note_S24_20181227_034657_2": "mcm terlampau shift out betul, nanti la cari",
+      "note_S24_20181227_034657_3": "mcm terlampau shift out betul, nanti la cari"
+    },
+    "ear_ec_threshold": {
+      "S24_20181227_034657": 40,
+      "S24_20181227_034657_2": 40,
+      "S24_20181227_034657_3": 40,
+      "note": "40 is accepted"
+    },
+    "fif_path": "S11.fif",
+    "shift_first_video": {
+      "shift_val": 500,
+      "start_time": 978,
+      "notes": ""
+    },
+    "shift_second_video": {
+      "shift_val": 524,
+      "start_time": 0,
+      "notes": "9 December 2024: we will use the value 524. Do note the large value of shift"
+    },
+    "shift_third_video": {
+      "shift_val": 548,
+      "start_time": 54,
+      "notes": "9 December 2024: we will use the value 548. Do note the large value of shift"
+    },
+    "shift_all": {
+      "first_second": 524,
+      "second_third": 524,
+      "start_time": 0,
+      "notes": ""
+    },
+    "videoEndTime": {
+      "first": 1798.862622,
+      "second": 1799.165704
+    },
+    "start_time": 48,
+    "general_notes": "Antara file yang bmasalh untuk sync, carefull \n"
+  },
+  "S12": {
+    "ear_data": {
+      "first": "S25_20190124_060024.pkl",
+      "second": "S25_20190124_060024_2.pkl",
+      "third": "S25_20190124_060024_3.pkl"
+    },
+    "frame_video": {
+      "S25_20190124_060024": 53959,
+      "S25_20190124_060024_2": 53969,
+      "S25_20190124_060024_3":44782
+    },
+    "shift_cvat": {
+      "S25_20190124_060024": 5,
+      "S25_20190124_060024_2": 5,
+      "S25_20190124_060024_3": 5,
+        "note": "",
+        "note_S25_20190124_060024": "value 5 work with 2.8, 18.6,47.87",
+        "note_S25_20190124_060024_2": "value 5 work with 0.4, 29.07, 42.27",
+        "note_S25_20190124_060024_3": "value 5 work with 1.87, 21.03, 23.47 "
+    },
+    "ear_ec_threshold": {
+      "S25_20190124_060024": 40,
+      "S25_20190124_060024_2": 40,
+      "S25_20190124_060024_3": 40,
+      "note": "40 is accepted"
+    },
+    "fif_path": "S12.fif",
+    "shift_first_video": {
+      "shift_val": 0,
+      "start_time": 1074,
+      "notes": ""
+    },
+    "shift_second_video": {
+      "shift_val": 22,
+      "start_time": 588,
+      "notes": "9 December 2024: we will use the value 22"
+    },
+    "shift_third_video": {
+      "shift_val": 49,
+      "start_time": 48,
+      "notes": "9 December 2024: we will use the value 49"
+    },
+    "shift_all": {
+      "first_second": 22,
+      "second_third": 22,
+      "start_time": 0,
+      "notes": ""
+    },
+    "videoEndTime": {
+      "first": 1798.860337,
+      "second": 1799.170224
+    },
+    "start_time": 588,
+    "general_notes": ""
+  },
+  "S13": {
+    "ear_data": {
+      "first": "S26_20190108_035218.pkl",
+      "second": "S26_20190108_035218_2.pkl",
+      "third": "S26_20190108_035218_3.pkl"
+    },
+    "frame_video": {
+      "S26_20190108_035218": 53967,
+      "S26_20190108_035218_2": 53969,
+      "S26_20190108_035218_3": 43234
+    },
+    "shift_cvat": {
+      "S26_20190108_035218": 6,
+      "S26_20190108_035218_2": 5,
+      "S26_20190108_035218_3": 5,
+        "note": "rpb has check using report and the shift value is, in increasing file name or, 6,5,5",
+        "note_S26_20190108_035218": "6 work with 11.13,22.1,47.3,60.13",
+        "note_S26_20190108_035218_2": "5 work with 7.27s,9.67, 59.67",
+        "note_S26_20190108_035218_3": "5 work with 34.47,44.33,45.40"
+    },
+    "ear_ec_threshold": {
+      "S26_20190108_035218": 40,
+      "S26_20190108_035218_2": 40,
+      "S26_20190108_035218_3": 40,
+      "note": "40 is accepted"
+    },
+    "fif_path": "S13.fif",
+    "shift_first_video": {
+      "shift_val": -1,
+      "start_time": 1096,
+      "notes": ""
+    },
+    "shift_second_video": {
+      "shift_val": 30,
+      "start_time": 0,
+      "notes": "9 December 2024: we will use the value 30"
+    },
+    "shift_third_video": {
+      "shift_val": 58,
+      "start_time": 48,
+      "notes": "9 December 2024: we will use the value 58"
+    },
+    "shift_all": {
+      "first_second": 30,
+      "second_third": 30,
+      "start_time": 0,
+      "notes": ""
+    },
+    "videoEndTime": {
+      "first": 1798.9,
+      "second": 1798.9666
+    },
+    "start_time": 48,
+    "general_notes": ""
+  },
+  "S16": {
+    "ear_data": {
+      "first": "S29_20190111_034326.pkl",
+      "second": "S29_20190111_034326_2.pkl",
+      "third": "S29_20190111_034326_3.pkl"
+    },
+    "frame_video": {
+      "S29_20190111_034326": 53953,
+      "S29_20190111_034326_2": 53969,
+      "S29_20190111_034326_3": 44650
+    },
+    "shift_cvat": {
+      "S29_20190111_034326": "FALSE",
+      "S29_20190111_034326_2": 5,
+      "S29_20190111_034326_3": 5,
+        "note": "21.9 can u check this",
+        "note_S29_20190111_034326": "ni macam start dari 2 saja ni, but i dont have the plot yet, will revisit this agaim",
+        "note_S29_20190111_034326_2": "xpayah la mau dourble check ni, confident sdah.the value 5 work with 1.37,5.9,19.6,20.3,33.13, 42.73. this value 5 is working and i cross check on 27 Jan 2025 petang time hujan",
+      "note_S29_20190111_034326_3": "mcm jg _2, xpayah la check,confident ni sama ni no 5.now check 5 and seems it work with 3.73, 4.53,9.9, 26.73. The value 5 is working and i cross check on 27 Jan 2025 petang time hujan"
+    },
+    "ear_ec_threshold": {
+      "S29_20190111_034326": 40,
+      "S29_20190111_034326_2": 40,
+      "S29_20190111_034326_3": 40,
+      "note": "40 is accepted"
+    },
+    "fif_path": "S16.fif",
+    "shift_first_video": {
+      "shift_val": 4,
+      "start_time": 22,
+      "notes": ""
+    },
+    "shift_second_video": {
+      "shift_val": 25,
+      "start_time": 0,
+      "notes": "9 December 2024: we will use the value 25"
+    },
+    "shift_third_video": {
+      "shift_val": 47,
+      "start_time": 0,
+      "notes": "9 December 2024: we will use the value 47"
+    },
+    "shift_all": {
+      "first_second": 25,
+      "second_third": 25,
+      "start_time": 0,
+      "notes": ""
+    },
+    "videoEndTime": {
+      "first": 1798.646271,
+      "second": 1799.189403
+    },
+    "start_time": 0,
+    "general_notes": ""
+  },
+  "S17": {
+    "ear_data": {
+      "first": "S30_20190114_040013.pkl",
+      "second": "S30_20190114_040013_2.pkl",
+      "third": "S30_20190114_040013_3.pkl"
+    },
+    "frame_video": {
+      "S30_20190114_040013": 53965,
+      "S30_20190114_040013_2": 53600,
+      "S30_20190114_040013_3": 53959
+    },
+    "shift_cvat": {
+      "S30_20190114_040013": 5,
+      "S30_20190114_040013_2": 5,
+      "S30_20190114_040013_3": 5,
+      "note": "this subject move to much, consider to drop this subject as it might affect the overall result. Regardless, the value 5,5,5 should work with all the files _1,_2,and _3",
+      "note_S30_20190114_040013": "as of 27 Jan , the value  5  work with  19.97,36.27,45.9",
+      "note_S30_20190114_040013_2": "on 27 Jan check  with 5 and it seem work with 7.7,9.64",
+        "note_S30_20190114_040013_3": "yesze ib 27 Jan i check with value 5 and it  it seem work with 6.73,13.13,16.4"
+    },
+    "ear_ec_threshold": {
+      "S30_20190114_040013": 40,
+      "S30_20190114_040013_2": 40,
+      "S30_20190114_040013_3": 40,
+      "note": "40 is accepted"
+    },
+    "fif_path": "S17.fif",
+    "shift_second_video": {
+      "shift_val": 23,
+      "start_time": 0,
+      "notes": ""
+    },
+    "shift_third_video": {
+      "shift_val": 0,
+      "start_time": 180,
+      "notes": "I have test increment 50, from 0 to 650, but there is no good fit ali.Something wrong with EOG data.seem like ringing (need to double check,"
+    },
+    "shift_all": {
+      "first_second": 23,
+      "second_third": 23,
+      "start_time": 0,
+      "notes": ""
+    },
+    "videoEndTime": {
+      "first": 1799.054525,
+      "second": 1786.596569
+    },
+    "start_time": 0,
+    "general_notes": ""
+  },
+  "S18": {
+    "ear_data": {
+      "first": "S31_20190115_035853.pkl",
+      "second": "S31_20190115_035853_2.pkl",
+      "third": "S31_20190115_035853_3.pkl"
+    },
+    "frame_video": {
+      "S31_20190115_035853": 53959,
+      "S31_20190115_035853_2": 53969,
+      "S31_20190115_035853_3": 51786
+    },
+    "shift_cvat": {
+      "S31_20190115_035853": 2,
+      "S31_20190115_035853_2": 5,
+      "S31_20190115_035853_3": 5,
+      "note": "ok but pending with the file S31_20190115_035853 as i need visual confirmation about the value 2",
+        "note_S31_20190115_035853": "i believe the shift value should be 2, we will revisit this again",
+        "note_S31_20190115_035853_2": "on rainiy day 27 Jan, we confidently use 5 and seem it work with 20.37, 37.07, 78.43,91.13",
+        "note_S31_20190115_035853_3": "mantap, this should work with  5 and it follow good pattern on 142.57, 151.57, 165.77"
+    },
+    "ear_ec_threshold": {
+      "S31_20190115_035853": 40,
+      "S31_20190115_035853_2": 40,
+      "S31_20190115_035853_3": 40,
+      "note": "40 is accepted"
+    },
+    "fif_path": "S18.fif",
+    "shift_first_video": {
+      "shift_val": 3,
+      "start_time": 338,
+      "notes": ""
+    },
+    "shift_second_video": {
+      "shift_val": 20,
+      "start_time": 1330,
+      "notes": "9 December 2024: we will use the value 20"
+    },
+    "shift_third_video": {
+      "shift_val": 47,
+      "start_time": 0,
+      "notes": "9 December 2024: we will use the value 47"
+    },
+    "shift_all": {
+      "first_second": 18,
+      "second_third": 18,
+      "start_time": 0,
+      "notes": ""
+    },
+    "videoEndTime": {
+      "first": 1798.853761,
+      "second": 1799.159853
+    },
+    "start_time": 1330,
+    "general_notes": ""
+  },
+  "S19": {
+    "ear_data": {
+      "first": "S32_20190116_041137.pkl",
+      "second": "S32_20190116_041137_2.pkl",
+      "third": "S32_20190116_041137_3.pkl"
+    },
+    "frame_video": {
+      "S32_20190116_041137": 53949,
+      "S32_20190116_041137_2": 53969,
+      "S32_20190116_041137_3": 44905
+    },
+    "shift_cvat": {
+      "S32_20190116_041137": 4,
+      "S32_20190116_041137_2": 5,
+      "S32_20190116_041137_3": 5,
+        "note": "",
+        "note_S32_20190116_041137": "the shift 4 for S32_20190116_041137.report is broken, but i suspect it should work with 351.4,360.67, 426.4",
+      "note_S32_20190116_041137_2": "on 27 Jan rainy day, 5 mcm work with 5.4, 7.0,9.13, 32.97",
+      "note_S32_20190116_041137_3": "with 5, seem to work with 5.6, 60.87, 191.77 and all of this validated during 27 Jan rainy day"
+    },
+    "ear_ec_threshold": {
+      "S32_20190116_041137": 40,
+      "S32_20190116_041137_2": 40,
+      "S32_20190116_041137_3": 40,
+      "note": "40 is accepted"
+    },
+    "fif_path": "S19.fif",
+    "shift_first_video": {
+      "shift_val": 1,
+      "start_time": 556,
+      "notes": ""
+    },
+    "shift_second_video": {
+      "shift_val": 22,
+      "start_time": 104,
+      "notes": "9 December 2024: we will use the value 22"
+    },
+    "shift_third_video": {
+      "shift_val": 44,
+      "start_time": 104,
+      "notes": ""
+    },
+    "shift_all": {
+      "first_second": 22,
+      "second_third": 22,
+      "start_time": 0,
+      "notes": ""
+    },
+    "videoEndTime": {
+      "first": 1798.53785,
+      "second": 1799.168704
+    },
+    "start_time": 104,
+    "general_notes": ""
+  },
+  "S20": {
+    "ear_data": {
+      "first": "s33_20190117_042235.pkl",
+      "second": "s33_20190117_042235_2.pkl",
+      "third": "s33_20190117_042235_3.pkl"
+    },
+    "frame_video": {
+      "s33_20190117_042235": 53973,
+      "s33_20190117_042235_2": 53969,
+      "s33_20190117_042235_3": 2986
+    },
+    "shift_cvat": {
+      "s33_20190117_042235": 5,
+      "s33_20190117_042235_2": 5,
+      "note": "consider to drop since subject is using spec",
+        "note_s33_20190117_042235": "5 mcm ok dgn 394.3, 434.77, 472.1 (not that confident)",
+        "note_s33_20190117_042235_2": "5 mcm ok jg dgn 21.27, 33.23, im to lazy to explore other images as im considering drop this subject"
+    },
+    "ear_ec_threshold": {
+      "s33_20190117_042235": 40,
+      "s33_20190117_042235_2": 40,
+      "note": "40 is accepted"
+    },
+    "fif_path": "S20.fif",
+    "shift_second_video": {
+      "shift_val": 23,
+      "start_time": 2,
+      "notes": "9 December 2024: we will use the value 23"
+    },
+    "shift_third_video": {
+      "shift_val": 0,
+      "start_time": 0,
+      "notes": "The s33_20190117_042235_3.mov is about 1 minute long. Therefore, we will ignore this"
+    },
+    "shift_all": {
+      "first_second": 22,
+      "second_third": 22,
+      "start_time": 0,
+      "notes": ""
+    },
+    "videoEndTime": {
+      "first": 1799.339849,
+      "second": 1799.17712
+    },
+    "start_time": 2,
+    "general_notes": ""
+  },
+  "S21": {
+    "ear_data": {
+      "first": "S34_20190122_044130.pkl",
+      "second": "S34_20190122_044130_2.pkl",
+      "third": "S34_20190122_044130_3.pkl"
+    },
+    "frame_video": {
+      "S34_20190122_044130": 53967,
+      "S34_20190122_044130_2": 53969,
+      "S34_20190122_044130_3": 51520
+    },
+    "shift_cvat": {
+      "S34_20190122_044130": 3,
+      "S34_20190122_044130_2": "FALSE",
+      "S34_20190122_044130_3": 5,
+        "note": "",
+        "note_S34_20190122_044130": "after dinner and I check that 3 seems to work with 344, 354.33,362.27",
+        "note_S34_20190122_044130_2": "need to plot all shift value to get a good overview ",
+        "note_S34_20190122_044130_3": "yaa lepas makan malam, 5 seems to work with 2.37 , 10.5, 19.23, 29.93"
+    },
+    "ear_ec_threshold": {
+      "S34_20190122_044130": 40,
+      "S34_20190122_044130_2": 40,
+      "S34_20190122_044130_3": 40,
+      "note": "40 is accepted"
+    },
+    "fif_path": "S21.fif",
+    "shift_first_video": {
+      "shift_val": 502,
+      "start_time": 836,
+      "notes": "but need to adjust a litle bit, mb shift 1 or 2"
+    },
+    "shift_second_video": {
+      "shift_val": 523,
+      "start_time": 128,
+      "notes": "9 December 2024: we will use the value 523"
+    },
+    "shift_third_video": {
+      "shift_val": 46,
+      "start_time": 104,
+      "notes": "9 December 2024: we will use the value 46"
+    },
+    "shift_all": {
+      "first_second": 524,
+      "second_third": 524,
+      "start_time": 0,
+      "notes": ""
+    },
+    "videoEndTime": {
+      "first": 1799.129939,
+      "second": 1799.172972
+    },
+    "start_time": 48,
+    "general_notes": "Antara file yang bmasalh untuk sync, carefull\n"
+  },
+  "S22": {
+    "ear_data": {
+      "first": "S35_20190123_040805.pkl",
+      "second": "S35_20190123_040805_2.pkl",
+      "third": "S35_20190123_040805_3.pkl"
+    },
+    "frame_video": {
+      "S35_20190123_040805": 53969,
+      "S35_20190123_040805_2": 53969,
+      "S35_20190123_040805_3": 52172
+    },
+    "shift_cvat": {
+      "S35_20190123_040805": 5,
+      "S35_20190123_040805_2": 5,
+      "S35_20190123_040805_3": "FALSE",
+      "note": "",
+        "note_S35_20190123_040805": "uhu 5 ni work with 112.27, 170.73, 378.53, 627.93",
+      "note_S35_20190123_040805_2":"with 5 ni, work with 18.93, 19.97 (deal breaker), 98.63, 149.47 (deal breaker)",
+      "note_S35_20190123_040805_3": "for some reason, out of sync habiss, need to plot in detail, but i suspect mcm shift 12"
+    },
+    "ear_ec_threshold": {
+      "S35_20190123_040805": 50,
+      "S35_20190123_040805_2": 40,
+      "S35_20190123_040805_3": 40,
+      "note": "yet to complete"
+    },
+    "fif_path": "S22.fif",
+    "shift_first_video": {
+      "shift_val": 0,
+      "start_time": 0,
+      "notes": ""
+    },
+    "shift_second_video": {
+      "shift_val": 25,
+      "start_time": 140,
+      "notes": "9 December 2024: we will use the value 25"
+    },
+    "shift_third_video": {
+      "shift_val": 548,
+      "start_time": 134,
+      "notes": "9 December 2024: we will use the value 548"
+    },
+    "shift_all": {
+      "first_second": 25,
+      "second_third": 25,
+      "start_time": 0,
+      "notes": ""
+    },
+    "videoEndTime": {
+      "first": 1799.182354,
+      "second": 1799.182904
+    },
+    "start_time": 140,
+    "general_notes": ""
+  },
+  "S23": {
+    "ear_data": {
+      "first": "S36_20190125_040931.pkl",
+      "second": "S36_20190125_040931_2.pkl",
+      "third": "S36_20190125_040931_3.pkl"
+    },
+    "frame_video": {
+      "S36_20190125_040931": 53967,
+      "S36_20190125_040931_2": 53969,
+      "S36_20190125_040931_3": 53971
+    },
+    "shift_cvat": {
+      "S36_20190125_040931": 4,
+      "S36_20190125_040931_2": 5,
+      "S36_20190125_040931_3": 5,
+        "note": "",
+        "note_S36_20190125_040931": "oyeay, value 4 work with 1522.7, 1539.4, 1561.77. good crosscheck with value 4",
+      "note_S36_20190125_040931_2": "great, i can confirm value 5 is working with 91.47, 128.87, 136.7",
+      "note_S36_20190125_040931_3": "ni antara sbjc paling senang and confidently say 5 word  against 3.83, 47.33, 49.4"
+    },
+    "ear_ec_threshold": {
+      "S36_20190125_040931": 40,
+      "S36_20190125_040931_2": 40,
+      "S36_20190125_040931_3": 40,
+      "note": "40 is accepted"
+    },
+    "fif_path": "S23.fif",
+    "shift_first_video": {
+      "shift_val": 1,
+      "start_time": 0,
+      "notes": ""
+    },
+    "shift_second_video": {
+      "shift_val": 24,
+      "start_time": 134,
+      "notes": "9 December 2024: we will use the value 24"
+    },
+    "shift_third_video": {
+      "shift_val": 48,
+      "start_time": 104,
+      "notes": "9 December 2024: we will use the value 48"
+    },
+    "shift_all": {
+      "first_second": 24,
+      "start_time": 0,
+      "notes": ""
+    },
+    "videoEndTime": {
+      "first": 1799.120434,
+      "second": 1799.181647
+    },
+    "start_time": 134,
+    "general_notes": ""
+  },
+  "S24": {
+    "ear_data": {
+      "first": "S38_20190129_035118.pkl",
+      "second": "S38_20190129_035118_2.pkl",
+      "third": "S38_20190129_035118_3.pkl"
+    },
+    "frame_video": {
+      "S38_20190129_035118": 53973,
+      "S38_20190129_035118_2": 53971,
+      "S38_20190129_035118_3": 41905
+    },
+    "shift_cvat": {
+      "S38_20190129_035118": 5,
+      "S38_20190129_035118_2": 5,
+      "S38_20190129_035118_3": 5,
+        "note": "",
+        "note_S38_20190129_035118": "ok, ni mmmg 5 ya since it 5work with 244.6, 273.8, 298.17 (deal breaker), 304.6 (deal breaker)",
+        "note_S38_20190129_035118_2": "ok la, 5 ni ada beberapa deal breaker. 5 work with 13.23, 35.2, 48.5 (deal breaker)",
+        "note_S38_20190129_035118_3": "5 31.77 (deal breaker), 98.57 (deal breaker), 101.37 (deal breaker)"
+    },
+    "ear_ec_threshold": {
+      "S38_20190129_035118": 30,
+      "S38_20190129_035118_2": 30,
+      "S38_20190129_035118_3": 30,
+      "note": "The threshold might be incorrect, this have to manually verified. one of the hardest to work with"
+    },
+    "fif_path": "S24.fif",
+    "shift_first_video": {
+      "shift_val": 1,
+      "start_time": 0,
+      "notes": ""
+    },
+    "shift_second_video": {
+      "shift_val": 24,
+      "start_time": 152,
+      "notes": "9 December 2024: we will use the value 24"
+    },
+    "shift_third_video": {
+      "shift_val": 46,
+      "start_time": 104,
+      "notes": "9 December 2024: we will use the value 46"
+    },
+    "shift_all": {
+      "first_second": 24,
+      "second_third": 24,
+      "start_time": 0,
+      "notes": ""
+    },
+    "videoEndTime": {
+      "first": 1799.288675,
+      "second": 1799.257016
+    },
+    "start_time": 152,
+    "general_notes": ""
+  },
+  "S26": {
+    "ear_data": {
+      "first": "S39_20190130_052313.pkl",
+      "second": "S39_20190130_052313_2.pkl",
+      "third": "S39_20190130_052313_3.pkl"
+    },
+    "frame_video": {
+      "S39_20190130_052313": 53944,
+      "S39_20190130_052313_2": 53969,
+      "S39_20190130_052313_3": 35560
+    },
+    "shift_cvat": {
+      "S39_20190130_052313": 5,
+      "S39_20190130_052313_2": "FALSE",
+      "S39_20190130_052313_3": 5,
+      "note": "",
+        "note_S39_20190130_052313": "5 and test against  22.5, 25.97 (deal breaker), 119.63 (deal breaker), 192.37 (deal breaker)",
+        "note_S39_20190130_052313_2": "based on 10s, mcm guna 2 or 3, lets check later",
+        "note_S39_20190130_052313_3": "5 and mcm  work with  13.33, 54.23, 58.6 (deal breaker), 63.77 (deal breaker), 64.87 (deal breaker)"
+    },
+    "ear_ec_threshold": {
+      "S39_20190130_052313": 40,
+      "S39_20190130_052313_2": 40,
+      "S39_20190130_052313_3": 40,
+      "note": "40 is accepted"
+    },
+    "fif_path": "S26.fif",
+    "shift_first_video": {
+      "shift_val": 500,
+      "start_time": 320,
+      "notes": ""
+    },
+    "shift_second_video": {
+      "shift_val": 524,
+      "start_time": 208,
+      "notes": "9 December 2024: we will use the value 524"
+    },
+    "shift_third_video": {
+      "shift_val": 48,
+      "start_time": 104,
+      "notes": "9 December 2024: we will use the value 48"
+    },
+    "shift_all": {
+      "first_second": 524,
+      "second_third": 524,
+      "start_time": 0,
+      "notes": ""
+    },
+    "videoEndTime": {
+      "first": 1798.325003,
+      "second": 1799.177827
+    },
+    "start_time": 208,
+    "general_notes": ""
+  },
+  "S27": {
+    "ear_data": {
+      "first": "S40_20190201_033636.pkl",
+      "second": "S40_20190201_033636_2.pkl",
+      "third": "S40_20190201_033636_3.pkl"
+    },
+    "frame_video": {
+      "S40_20190201_033636": 53957,
+      "S40_20190201_033636_2": 53969,
+      "S40_20190201_033636_3": 53971
+    },
+    "shift_cvat": {
+      "S40_20190201_033636": 3,
+      "S40_20190201_033636_2": "FALSE",
+      "S40_20190201_033636_3": 5,
+      "note": "",
+      "note_S40_20190201_033636": "onmorning 28 Jan, based on viz report i decide to choose 3. lets check 174.5 (work with 3), 176.17, 177.17, 206.13 (mcm work with 4), 236.23 (deal breaker for 3), 251.23, 251.73",
+      "note_S40_20190201_033636_2":"need to print complete report, i dont know where is the rigt shift but it should either 4,5,6. 5 mcm work with 7.2,13.63 (mcm work with 4),25.1 (mcm work 4), but i need to repritnt back report 4, 37.47 (mcm work with 6)",
+      "note_S40_20190201_033636_3":"okay, on 28 Jan, i select 5 as it work with  66.83, 96.87, 169.93, 203.23 (deal breaker)"
+    },
+    "ear_ec_threshold": {
+      "S40_20190201_033636": 40,
+      "S40_20190201_033636_2": 40,
+      "S40_20190201_033636_3": 40,
+      "note": "40 is accepted"
+    },
+    "fif_path": "S27.fif",
+    "shift_first_video": {
+      "shift_val": 2,
+      "start_time": 0,
+      "notes": ""
+    },
+    "shift_second_video": {
+      "shift_val": 25,
+      "start_time": 0,
+      "notes": ""
+    },
+    "shift_third_video": {
+      "shift_val": 48,
+      "start_time": 104,
+      "notes": ""
+    },
+    "shift_all": {
+      "first_second": 25,
+      "second_third": 25,
+      "notes": ""
+    },
+    "videoEndTime": {
+      "first": 1798.78686,
+      "second": 1799.159417
+    },
+    "start_time": 0,
+    "general_notes": ""
+  }
+}
+}

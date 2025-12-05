@@ -4,7 +4,7 @@ from pathlib import Path
 
 import mne
 import numpy as np
-from src.ui.annotation_io import load_annotation_frame
+from src.ui_murat.annotation_io import load_annotation_frame
 from src.utils.annotations import annotations_to_frame  # noqa: F401
 
 
