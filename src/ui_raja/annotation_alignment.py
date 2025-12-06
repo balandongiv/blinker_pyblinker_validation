@@ -139,8 +139,17 @@ def trim_annotations_to_raw_range(raw: mne.io.BaseRaw, annotations: mne.Annotati
     return trimmed
 
 
-def attach_frame_annotations_to_raw(raw: mne.io.BaseRaw, frame) -> mne.io.BaseRaw:
-    """Convert, align, trim, and attach annotations from a DataFrame to Raw."""
+def attach_frame_annotations_to_raw(
+    raw: mne.io.BaseRaw, frame
+) -> tuple[mne.io.BaseRaw, mne.Annotations]:
+    """Convert, align, trim, and attach annotations from a DataFrame to Raw.
+
+    Returns the mutated ``raw`` along with the aligned/trimmed annotations that
+    were attached. Callers that need a frame aligned to the visible Raw timeline
+    should convert the returned annotations instead of ``raw.annotations`` to
+    avoid the first-time offset that MNE applies internally when storing
+    annotations.
+    """
 
     annotations = annotations_from_frame(frame)
     aligned = align_annotations_to_raw(raw, annotations)
@@ -152,4 +161,4 @@ def attach_frame_annotations_to_raw(raw: mne.io.BaseRaw, frame) -> mne.io.BaseRa
             getattr(raw, "filenames", None),
         )
     raw.set_annotations(trimmed)
-    return raw
+    return raw, trimmed

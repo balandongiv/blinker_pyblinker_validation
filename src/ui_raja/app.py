@@ -830,8 +830,10 @@ class RajaAnnotationApp:
         )
 
         raw = mne.io.read_raw_fif(self.selected_session.fif_path, preload=True)
-        raw = attach_frame_annotations_to_raw(raw, self.annotation_frame)
-        frame = annotations_to_frame(raw.annotations)
+        raw, aligned_annotations = attach_frame_annotations_to_raw(
+            raw, self.annotation_frame
+        )
+        frame = annotations_to_frame(aligned_annotations)
         skip_labels = self._selected_labels_to_skip()
         ann_inside, inside, outside, _ = prepare_annotations_for_window(
             frame, start, end, skip_labels
