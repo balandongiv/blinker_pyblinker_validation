@@ -98,7 +98,19 @@ def align_annotations_to_raw(
 
     candidates.sort(key=lambda entry: (-entry["in_range"], abs(entry["base_time"])))
     best = candidates[0]
-    best_annotations = best["annotations"].copy()
+
+    # Rebase onto the Raw's visible timeline (typically starting at 0) so that
+    # plotting windows anchored to the UI's start/end operate on the same
+    # coordinate system regardless of Raw.first_time. This avoids situations
+    # where aligned onsets live past the visible end of the plot.
+    data_start = float(raw.times[0])
+    if data_start != 0.0:
+        rebased_onsets = [onset - data_start for onset in best["annotations"].onset]
+        best_annotations = _rebuild_annotations(
+            best["annotations"], onset=rebased_onsets, orig_time=None
+        )
+    else:
+        best_annotations = best["annotations"].copy()
 
     candidate_summaries = [
         AlignmentCandidate(
@@ -118,8 +130,10 @@ def align_annotations_to_raw(
 def trim_annotations_to_raw_range(raw: mne.io.BaseRaw, annotations: mne.Annotations) -> mne.Annotations:
     """Return a copy of annotations restricted to the Raw's time range."""
 
-    data_start = float(raw.times[0])
-    data_end = float(raw.times[-1])
+    # Work in the Raw's visible window (typically 0..duration) to match the
+    # rebased alignment we apply before attaching annotations for plotting.
+    data_start = 0.0
+    data_end = float(raw.times[-1] - raw.times[0])
     keep_mask = [data_start <= onset <= data_end for onset in annotations.onset]
     trimmed = annotations.copy()[keep_mask]
     return trimmed
