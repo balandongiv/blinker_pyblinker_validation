@@ -27,14 +27,22 @@ from src.ui_raja.annotation_import import (  # noqa: E402
 )
 from src.ui_raja.annotation_alignment import (  # noqa: E402
     align_annotations_to_raw,
+    attach_frame_annotations_to_raw,
     trim_annotations_to_raw_range,
 )
 from src.ui_murat.annotation_io import annotations_from_frame  # noqa: E402
 from src.ui_raja.discovery import SessionInfo  # noqa: E402
+from src.ui_murat.segment_utils import prepare_annotations_for_window  # noqa: E402
+from src.utils.annotations import annotations_to_frame  # noqa: E402
 
 
 # Toggle to enable manual plotting when running interactively.
 PLOT = False
+
+# Default plotting window to mimic Raja UI behavior.
+WINDOW_START = 0.0
+WINDOW_END = 500.0
+SKIP_LABELS: set[str] = set()
 
 
 class DiagnosticError(Exception):
@@ -149,13 +157,11 @@ def main() -> None:
         )
     print(f"Using alignment: {chosen}")
 
-    annotations = aligned
-
     data_start = float(raw.times[0])
     data_end = float(raw.times[-1])
     out_of_range = [
         (onset, desc)
-        for onset, desc in zip(annotations.onset, annotations.description)
+        for onset, desc in zip(aligned.onset, aligned.description)
         if onset < data_start or onset > data_end
     ]
     print(f"Annotations outside Raw range before trimming: {len(out_of_range)}")
@@ -166,22 +172,23 @@ def main() -> None:
         )
         for onset, desc in _preview_iterable(out_of_range, limit=10):
             print(f"  onset={onset}, description={desc}")
-        trimmed_annotations = trim_annotations_to_raw_range(raw, annotations)
+
+    trimmed_annotations = trim_annotations_to_raw_range(raw, aligned)
+    if len(trimmed_annotations) != len(aligned):
         print(
-            f"Trimming {len(annotations) - len(trimmed_annotations)} annotations; "
+            f"Trimming {len(aligned) - len(trimmed_annotations)} annotations; "
             f"{len(trimmed_annotations)} remain."
         )
-        annotations = trimmed_annotations
 
     _print_header("Attaching annotations to Raw")
-    raw.set_annotations(annotations)
+    raw, attached_annotations = attach_frame_annotations_to_raw(raw, frame)
     print(f"Raw annotations after set_annotations: {raw.annotations}")
     print(f"Annotation count on Raw: {len(raw.annotations)}")
 
-    if len(raw.annotations) != len(annotations):
+    if len(raw.annotations) != len(attached_annotations):
         raise DiagnosticError(
             "Mismatch between annotations before and after set_annotations: "
-            f"{len(annotations)} -> {len(raw.annotations)}"
+            f"{len(attached_annotations)} -> {len(raw.annotations)}"
         )
 
     if len(raw.annotations) == 0:
@@ -198,6 +205,33 @@ def main() -> None:
     print("Counts by description (top 10):")
     for label, count in counts.most_common(10):
         print(f"  {label}: {count}")
+
+    aligned_frame = annotations_to_frame(attached_annotations)
+
+    _print_header("Preparing windowed annotations (UI parity)")
+    print(
+        f"Window start={WINDOW_START}, end={WINDOW_END}, skip_labels={sorted(SKIP_LABELS)}"
+    )
+    ann_inside, inside, outside, filtered = prepare_annotations_for_window(
+        aligned_frame, WINDOW_START, WINDOW_END, SKIP_LABELS
+    )
+    print(
+        f"Annotations in view: {len(ann_inside)} | inside frame rows: {len(inside)} | "
+        f"outside frame rows: {len(outside)} | filtered rows: {len(filtered)}"
+    )
+    if len(ann_inside) == 0:
+        raise DiagnosticError(
+            "No annotations fall within the diagnostic plotting window; "
+            "this would result in an empty UI plot."
+        )
+
+    preview_ann = _preview_iterable(
+        zip(ann_inside.onset, ann_inside.duration, ann_inside.description),
+        limit=5,
+    )
+    print("Preview of annotations passed to browser (onset, duration, desc):")
+    for onset, duration, desc in preview_ann:
+        print(f"  onset={onset:.3f}, duration={duration:.3f}, description={desc}")
 
     if PLOT:
         raw.plot(title="S13 annotations diagnostic", block=True)
