@@ -78,6 +78,22 @@ def _candidate_in_range_count(
     return sum(start <= onset <= end for onset in onsets)
 
 
+def _rebuild_annotations(
+    annotations: mne.Annotations,
+    *,
+    onset: Iterable[float],
+    orig_time,
+) -> mne.Annotations:
+    """Create a new annotations object with updated onsets and orig_time."""
+
+    return mne.Annotations(
+        onset=list(onset),
+        duration=list(annotations.duration),
+        description=list(annotations.description),
+        orig_time=orig_time,
+    )
+
+
 def _choose_alignment(raw: mne.io.BaseRaw, annotations: mne.Annotations) -> mne.Annotations:
     """Select an annotation alignment that maximizes in-range coverage.
 
@@ -104,10 +120,13 @@ def _choose_alignment(raw: mne.io.BaseRaw, annotations: mne.Annotations) -> mne.
     register_candidate("relative_to_file", float(raw.times[0]), annotations.copy())
 
     # Candidate 2: treat onsets as absolute within the full recording and offset by first_time.
-    shifted = annotations.copy()
-    shifted.onset = shifted.onset + float(raw.first_time)
-    if raw.info.get("meas_date") is not None:
-        shifted.orig_time = raw.info["meas_date"]
+    shifted_onsets = annotations.onset + float(raw.first_time)
+    shifted_orig_time = raw.info.get("meas_date", annotations.orig_time)
+    shifted = _rebuild_annotations(
+        annotations,
+        onset=shifted_onsets,
+        orig_time=shifted_orig_time,
+    )
     register_candidate("offset_by_first_time", float(raw.first_time), shifted)
 
     # Pick the candidate with the highest number of in-range onsets, preferring the smallest
