@@ -132,6 +132,29 @@ def main() -> None:
     print(f"First time point: {raw.first_time}")
     print(f"Last time point: {raw.times[-1]}")
 
+    first_time = float(raw.first_time)
+    last_time = float(raw.times[-1])
+    out_of_range = [
+        (onset, desc)
+        for onset, desc in zip(annotations.onset, annotations.description)
+        if onset < first_time or onset > last_time
+    ]
+    print(f"Annotations outside Raw range before trimming: {len(out_of_range)}")
+    if out_of_range:
+        print(
+            "WARNING: Trimming annotations outside Raw range; see details below.",
+            file=sys.stderr,
+        )
+        for onset, desc in _preview_iterable(out_of_range, limit=10):
+            print(f"  onset={onset}, description={desc}")
+        keep_mask = [first_time <= onset <= last_time for onset in annotations.onset]
+        trimmed_annotations = annotations.copy()[keep_mask]
+        print(
+            f"Trimming {len(annotations) - len(trimmed_annotations)} annotations; "
+            f"{len(trimmed_annotations)} remain."
+        )
+        annotations = trimmed_annotations
+
     _print_header("Attaching annotations to Raw")
     raw.set_annotations(annotations)
     print(f"Raw annotations after set_annotations: {raw.annotations}")
@@ -147,19 +170,6 @@ def main() -> None:
     max_onset = float(raw.annotations.onset.max())
     print(f"Minimum onset: {min_onset}")
     print(f"Maximum onset: {max_onset}")
-
-    first_time = float(raw.first_time)
-    last_time = float(raw.times[-1])
-    out_of_range = [
-        (onset, desc)
-        for onset, desc in zip(raw.annotations.onset, raw.annotations.description)
-        if onset < first_time or onset > last_time
-    ]
-    print(f"Annotations outside Raw range: {len(out_of_range)}")
-    if out_of_range:
-        for onset, desc in _preview_iterable(out_of_range, limit=5):
-            print(f"  onset={onset}, description={desc}")
-        raise DiagnosticError("Some annotations fall outside the Raw time range.")
 
     counts = Counter(raw.annotations.description)
     print("Counts by description (top 10):")
