@@ -25,6 +25,10 @@ from src.ui_raja.annotation_import import (  # noqa: E402
     expected_zip_path,
     import_annotations,
 )
+from src.ui_raja.annotation_alignment import (  # noqa: E402
+    align_annotations_to_raw,
+    trim_annotations_to_raw_range,
+)
 from src.ui_murat.annotation_io import annotations_from_frame  # noqa: E402
 from src.ui_raja.discovery import SessionInfo  # noqa: E402
 
@@ -69,80 +73,6 @@ def _preview_iterable(values: Iterable, limit: int = 5) -> list:
             break
         preview.append(value)
     return preview
-
-
-def _candidate_in_range_count(
-    onsets: Iterable[float], *, start: float, duration: float
-) -> int:
-    end = start + duration
-    return sum(start <= onset <= end for onset in onsets)
-
-
-def _rebuild_annotations(
-    annotations: mne.Annotations,
-    *,
-    onset: Iterable[float],
-    orig_time,
-) -> mne.Annotations:
-    """Create a new annotations object with updated onsets and orig_time."""
-
-    return mne.Annotations(
-        onset=list(onset),
-        duration=list(annotations.duration),
-        description=list(annotations.description),
-        orig_time=orig_time,
-    )
-
-
-def _choose_alignment(raw: mne.io.BaseRaw, annotations: mne.Annotations) -> mne.Annotations:
-    """Select an annotation alignment that maximizes in-range coverage.
-
-    This evaluates several candidate timelines so the script works for any
-    segmented FIF (e.g., first, middle, or later chunks of a longer recording).
-    """
-
-    duration = float(raw.times[-1] - raw.times[0])
-
-    candidates: list[dict] = []
-
-    def register_candidate(name: str, base_time: float, aligned: mne.Annotations) -> None:
-        in_range = _candidate_in_range_count(aligned.onset, start=base_time, duration=duration)
-        candidates.append(
-            {
-                "name": name,
-                "base_time": base_time,
-                "annotations": aligned,
-                "in_range": in_range,
-            }
-        )
-
-    # Candidate 1: assume onsets already relative to file start (common case for segment files).
-    register_candidate("relative_to_file", float(raw.times[0]), annotations.copy())
-
-    # Candidate 2: treat onsets as absolute within the full recording and offset by first_time.
-    shifted_onsets = annotations.onset + float(raw.first_time)
-    shifted_orig_time = raw.info.get("meas_date", annotations.orig_time)
-    shifted = _rebuild_annotations(
-        annotations,
-        onset=shifted_onsets,
-        orig_time=shifted_orig_time,
-    )
-    register_candidate("offset_by_first_time", float(raw.first_time), shifted)
-
-    # Pick the candidate with the highest number of in-range onsets, preferring the smallest
-    # shift from the raw's time axis in the event of a tie.
-    candidates.sort(key=lambda entry: (-entry["in_range"], abs(entry["base_time"])))
-    best = candidates[0]
-
-    _print_header("Annotation alignment candidates")
-    for entry in candidates:
-        print(
-            f"  {entry['name']}: {entry['in_range']}/{len(annotations)} within "
-            f"[{entry['base_time']}, {entry['base_time'] + duration}]",
-        )
-    print(f"Using alignment: {best['name']}")
-
-    return best["annotations"].copy()
 
 
 def main() -> None:
@@ -206,7 +136,20 @@ def main() -> None:
     print(f"First time point: {raw.first_time}")
     print(f"Last time point: {raw.times[-1]}")
 
-    annotations = _choose_alignment(raw, annotations)
+    aligned, candidates, chosen = align_annotations_to_raw(
+        raw, annotations, return_candidates=True
+    )
+
+    _print_header("Annotation alignment candidates")
+    duration = float(raw.times[-1] - raw.times[0])
+    for entry in candidates:
+        print(
+            f"  {entry.name}: {entry.in_range}/{len(annotations)} within "
+            f"[{entry.base_time}, {entry.base_time + duration}]",
+        )
+    print(f"Using alignment: {chosen}")
+
+    annotations = aligned
 
     data_start = float(raw.times[0])
     data_end = float(raw.times[-1])
@@ -223,8 +166,7 @@ def main() -> None:
         )
         for onset, desc in _preview_iterable(out_of_range, limit=10):
             print(f"  onset={onset}, description={desc}")
-        keep_mask = [data_start <= onset <= data_end for onset in annotations.onset]
-        trimmed_annotations = annotations.copy()[keep_mask]
+        trimmed_annotations = trim_annotations_to_raw_range(raw, annotations)
         print(
             f"Trimming {len(annotations) - len(trimmed_annotations)} annotations; "
             f"{len(trimmed_annotations)} remain."

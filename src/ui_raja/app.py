@@ -39,7 +39,6 @@ from src.utils.annotations import (
 )
 
 from src.ui_murat.annotation_io import (
-    annotations_from_frame,
     load_annotation_frame,
     save_annotations,
 )
@@ -52,6 +51,7 @@ from src.ui_murat.segment_utils import (
 )
 
 from .annotation_import import AnnotationImportError, ensure_annotations
+from .annotation_alignment import attach_frame_annotations_to_raw
 from .constants import (
     CHANNEL_ALIASES,
     DEFAULT_CHANNEL_PICKS,
@@ -821,7 +821,6 @@ class RajaAnnotationApp:
         status = "already annotated" if annotated_before else "new segment"
         self.segment_status_var.set(f"Segment {start:.1f}-{end:.1f} s status: {status}")
 
-        annotations = annotations_from_frame(self.annotation_frame)
         session_cfg = AnnotationSession(
             fif_path=self.selected_session.fif_path,
             csv_path=self.selected_session.annotation_csv,
@@ -831,7 +830,7 @@ class RajaAnnotationApp:
         )
 
         raw = mne.io.read_raw_fif(self.selected_session.fif_path, preload=True)
-        raw.set_annotations(annotations)
+        raw = attach_frame_annotations_to_raw(raw, self.annotation_frame)
         frame = annotations_to_frame(raw.annotations)
         skip_labels = self._selected_labels_to_skip()
         ann_inside, inside, outside, _ = prepare_annotations_for_window(
