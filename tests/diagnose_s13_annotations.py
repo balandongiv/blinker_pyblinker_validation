@@ -132,12 +132,29 @@ def main() -> None:
     print(f"First time point: {raw.first_time}")
     print(f"Last time point: {raw.times[-1]}")
 
-    first_time = float(raw.first_time)
-    last_time = float(raw.times[-1])
+    data_start = float(raw.times[0])
+    data_end = float(raw.times[-1])
+
+    shifted = annotations.copy()
+    shifted.onset = shifted.onset + float(raw.first_time)
+
+    in_range_no_shift = sum(data_start <= onset <= data_end for onset in annotations.onset)
+    in_range_shifted = sum(data_start <= onset <= data_end for onset in shifted.onset)
+
+    print("Annotation alignment candidates:")
+    print(f"  No shift: {in_range_no_shift}/{len(annotations)} within data range")
+    print(f"  Shift by raw.first_time ({raw.first_time}): {in_range_shifted}/{len(annotations)} within data range")
+
+    if in_range_shifted > in_range_no_shift:
+        print("Using shifted onsets (raw.first_time offset)")
+        annotations = shifted
+    else:
+        print("Using unshifted onsets (relative to file start)")
+
     out_of_range = [
         (onset, desc)
         for onset, desc in zip(annotations.onset, annotations.description)
-        if onset < first_time or onset > last_time
+        if onset < data_start or onset > data_end
     ]
     print(f"Annotations outside Raw range before trimming: {len(out_of_range)}")
     if out_of_range:
@@ -147,7 +164,7 @@ def main() -> None:
         )
         for onset, desc in _preview_iterable(out_of_range, limit=10):
             print(f"  onset={onset}, description={desc}")
-        keep_mask = [first_time <= onset <= last_time for onset in annotations.onset]
+        keep_mask = [data_start <= onset <= data_end for onset in annotations.onset]
         trimmed_annotations = annotations.copy()[keep_mask]
         print(
             f"Trimming {len(annotations) - len(trimmed_annotations)} annotations; "
@@ -164,6 +181,11 @@ def main() -> None:
         raise DiagnosticError(
             "Mismatch between annotations before and after set_annotations: "
             f"{len(annotations)} -> {len(raw.annotations)}"
+        )
+
+    if len(raw.annotations) == 0:
+        raise DiagnosticError(
+            "No annotations remain after set_annotations; verify onset alignment."
         )
 
     min_onset = float(raw.annotations.onset.min())
