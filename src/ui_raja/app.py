@@ -831,8 +831,16 @@ class RajaAnnotationApp:
         )
 
         raw = mne.io.read_raw_fif(self.selected_session.fif_path, preload=True)
-        raw.set_annotations(annotations)
+        annotations_on_raw = annotations.copy()
+        if raw.first_time:
+            annotations_on_raw.set_time_shift(raw.first_time)
+            if raw.info["meas_date"] is not None:
+                annotations_on_raw.set_orig_time(raw.info["meas_date"])
+
+        raw.set_annotations(annotations_on_raw)
         frame = annotations_to_frame(raw.annotations)
+        if raw.first_time:
+            frame["onset"] -= raw.first_time
         skip_labels = self._selected_labels_to_skip()
         ann_inside, inside, outside, _ = prepare_annotations_for_window(
             frame, start, end, skip_labels
