@@ -149,6 +149,17 @@ def attach_frame_annotations_to_raw(
     should convert the returned annotations instead of ``raw.annotations`` to
     avoid the first-time offset that MNE applies internally when storing
     annotations.
+
+    Historical context:
+    -------------------
+    We start from a ~1.5-hour continuous preprocessed EEG recording per subject
+    (e.g., ``S1.fif``) and split it into 3 temporal segments, each aligned to
+    the duration of its corresponding driving video session. MNE keeps an
+    absolute time axis for Raw, so after cropping a long recording the
+    resulting ``raw.first_time`` reflects the original offset into the full
+    file (e.g., ~1799.08 s) instead of 0. Downstream UI code assumed each
+    cropped segment starts at 0 s, which caused misalignment between frame-
+    based annotations and the visible Raw timeline.
     """
 
     annotations = annotations_from_frame(frame)
@@ -160,5 +171,26 @@ def attach_frame_annotations_to_raw(
             "No annotations remain after alignment/trim for %s; attaching empty annotations.",
             getattr(raw, "filenames", None),
         )
+
+    # Attach to the current Raw so the annotations live alongside the data even
+    # before we normalize the time axis.
     raw.set_annotations(trimmed)
+
+    # ---------------------------------------------------------------------
+    # IMPORTANT CHANGE:
+    # Historically, we cropped a ~1.5-hour continuous Raw (e.g., S1.fif) into
+    # 3 temporal segments, each aligned to a driving video session. MNE keeps
+    # an absolute time axis, so after cropping, ``raw.first_time`` might be
+    # non-zero (e.g., 1799.08 s) rather than 0.
+    #
+    # Our annotation/frame alignment logic and UI treat each cropped segment as
+    # if it starts at t = 0 s. To enforce this contract and eliminate the
+    # first-time offset, we rebuild the Raw as a RawArray using the same data
+    # and info. RawArray initializes with first_samp = 0, so first_time = 0.0.
+    # ---------------------------------------------------------------------
+    data = raw.get_data()
+    info = raw.info.copy()
+    raw = mne.io.RawArray(data, info)
+    raw.set_annotations(trimmed)
+
     return raw, trimmed

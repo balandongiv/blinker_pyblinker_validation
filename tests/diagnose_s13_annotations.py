@@ -182,6 +182,8 @@ def main() -> None:
 
     _print_header("Attaching annotations to Raw")
     raw, attached_annotations = attach_frame_annotations_to_raw(raw, frame)
+    print(f"Raw first_time after rebuild: {raw.first_time}")
+    print(f"Raw last time after rebuild: {raw.times[-1]}")
     print(f"Raw annotations after set_annotations: {raw.annotations}")
     print(f"Annotation count on Raw: {len(raw.annotations)}")
 
