@@ -2,8 +2,34 @@
 
 from __future__ import annotations
 
+import math
+
 import mne
 from .session import AnnotationSession
+
+
+PLACEHOLDER_LABELS = ("manual", "TO_MANUALLY_CHECK")
+
+
+def _ensure_placeholder_labels(
+    annotations: mne.Annotations, start: float
+) -> tuple[mne.Annotations, dict[str, float]]:
+    """Add zero-length annotations so common labels are available in the browser."""
+
+    placeholder_onsets: dict[str, float] = {}
+    annotations_for_plot = annotations
+
+    for index, label in enumerate(PLACEHOLDER_LABELS):
+        if label in annotations_for_plot.description:
+            continue
+
+        onset = start + (index * 1e-3)
+        placeholder_onsets[label] = onset
+        annotations_for_plot = annotations_for_plot + mne.Annotations(
+            onset=[onset], duration=[0.0], description=[label]
+        )
+
+    return annotations_for_plot, placeholder_onsets
 
 
 def launch_browser_and_collect(
@@ -24,13 +50,9 @@ def launch_browser_and_collect(
     print(f"Launching browser with title: {title}")
 
     raw_segment = raw.copy()
-    annotations_for_plot = local_annotations
-    placeholder_onset: float | None = None
-    if "manual" not in annotations_for_plot.description:
-        placeholder_onset = start
-        annotations_for_plot = annotations_for_plot + mne.Annotations(
-            onset=[placeholder_onset], duration=[0.0], description=["manual"]
-        )
+    annotations_for_plot, placeholder_onsets = _ensure_placeholder_labels(
+        local_annotations, start
+    )
 
     raw_segment.set_annotations(annotations_for_plot)
     plot_kwargs: dict[str, float | bool | list[str] | None | str] = {
@@ -46,16 +68,16 @@ def launch_browser_and_collect(
     raw_segment.plot(**plot_kwargs)
     ann = raw_segment.annotations
 
-    if placeholder_onset is not None:
+    if placeholder_onsets:
         keep_indices = [
             idx
             for idx, (desc, onset, duration) in enumerate(
                 zip(ann.description, ann.onset, ann.duration, strict=True)
             )
             if not (
-                desc == "manual"
-                and duration == 0.0
-                and onset == placeholder_onset
+                desc in placeholder_onsets
+                and math.isclose(duration, 0.0)
+                and math.isclose(onset, placeholder_onsets[desc])
             )
         ]
         ann = ann[keep_indices]
