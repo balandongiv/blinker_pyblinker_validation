@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "blinker-pyblinker-validation"
-version = "0.1.56"
+version = "0.1.57"
 description = "Utilities for validating PyBlinker outputs against MATLAB Blinker results."
 readme = "README.md"
 requires-python = ">=3.10"
