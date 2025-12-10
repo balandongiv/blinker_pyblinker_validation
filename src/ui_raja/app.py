@@ -120,6 +120,10 @@ class RajaAnnotationApp:
         self.segment_status_var = StringVar(value="")
         self.plot_channel_mode = StringVar(value="selected")
         self.plot_duration_var = StringVar(value="")
+        self.annotate_status_var = StringVar(value=STATUS_OPTIONS[0])
+        self.annotate_status_detail_var = StringVar(
+            value="Select a session to view and update its status."
+        )
         self.path_pair_var = StringVar(value=self.active_pair_name)
         self.status_selection_var = StringVar(value=STATUS_OPTIONS[0])
         self.status_detail_var = StringVar(value="Select a recording to update its status.")
@@ -238,6 +242,28 @@ class RajaAnnotationApp:
         self.duration_entry = Entry(duration_frame, width=10, textvariable=self.plot_duration_var)
         self.duration_entry.pack(side=LEFT, padx=(4, 0))
         Label(duration_frame, text="(controls arrow key jump)").pack(side=LEFT, padx=(6, 0))
+
+        status_frame = Frame(control_frame)
+        status_frame.pack(fill=X, pady=(0, 6))
+        Label(status_frame, text="FIF status:").pack(anchor="w")
+        status_controls = Frame(status_frame)
+        status_controls.pack(fill=X, pady=(2, 0))
+        OptionMenu(
+            status_controls,
+            self.annotate_status_var,
+            *STATUS_OPTIONS,
+        ).pack(side=LEFT, padx=(0, 6))
+        Button(
+            status_controls,
+            text="Update FIF Status",
+            command=self._update_current_session_status,
+        ).pack(side=LEFT)
+        Label(
+            status_frame,
+            textvariable=self.annotate_status_detail_var,
+            fg="green",
+            wraplength=400,
+        ).pack(anchor="w", pady=(4, 0))
 
         channel_frame = Frame(control_frame)
         channel_frame.pack(fill=X, pady=(4, 0))
@@ -469,6 +495,10 @@ class RajaAnnotationApp:
             and self.selected_session.fif_path.resolve() == fif_path
         ):
             self._update_info_status_line(new_status)
+            self.annotate_status_var.set(new_status)
+            self.annotate_status_detail_var.set(
+                f"Status for {values[0]} / {values[1]} set to {new_status}."
+            )
         self.status_detail_var.set(
             f"Status for {values[0]} / {values[1]} set to {new_status}."
         )
@@ -510,6 +540,31 @@ class RajaAnnotationApp:
             self.status_tree.selection_set(item_id)
             self.status_tree.see(item_id)
             self._on_status_tree_select()
+
+    def _update_current_session_status(self) -> None:
+        if self.selected_session is None:
+            messagebox.showinfo("No session", "Please select a session to update its status.")
+            return
+
+        new_status = self.annotate_status_var.get()
+        fif_path = self.selected_session.fif_path.resolve()
+        item_id = str(fif_path)
+
+        values = [
+            self.selected_session.subject_id,
+            self.selected_session.session_name,
+            new_status,
+        ]
+
+        if hasattr(self, "status_tree") and self.status_tree.exists(item_id):
+            tree_values = list(self.status_tree.item(item_id, "values"))
+            if len(tree_values) >= 3:
+                values = tree_values
+        elif hasattr(self, "status_tree"):
+            self.status_tree.insert("", "end", iid=item_id, values=values)
+
+        self._update_status(item_id, values, new_status)
+        self._sync_status_selection(fif_path)
 
     def _update_info_status_line(self, status_value: str) -> None:
         if not self.info_var.get():
@@ -653,6 +708,10 @@ class RajaAnnotationApp:
             f"Status: {status_value}"
         )
         self.info_var.set(summary)
+        self.annotate_status_var.set(status_value)
+        self.annotate_status_detail_var.set(
+            f"Current FIF status: {status_value}."
+        )
         self.segment_status_var.set("")
 
     def _current_range(self) -> tuple[float, float]:
