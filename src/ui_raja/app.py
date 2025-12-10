@@ -17,6 +17,7 @@ from tkinter import (
     TOP,
     X,
     Y,
+    BooleanVar,
     Button,
     Entry,
     Frame,
@@ -122,6 +123,7 @@ class RajaAnnotationApp:
         self.path_pair_var = StringVar(value=self.active_pair_name)
         self.status_selection_var = StringVar(value=STATUS_OPTIONS[0])
         self.status_detail_var = StringVar(value="Select a recording to update its status.")
+        self.subject_sort_desc = BooleanVar(value=False)
 
         self.session_status: dict[Path, str] = {}
         self.status_editor: ttk.Combobox | None = None
@@ -181,7 +183,15 @@ class RajaAnnotationApp:
         # Subject list
         subject_frame = Frame(main)
         subject_frame.pack(side=LEFT, fill=Y)
-        Label(subject_frame, text="Subjects").pack()
+        subject_header = Frame(subject_frame)
+        subject_header.pack(fill=X)
+        Label(subject_header, text="Subjects").pack(side=LEFT)
+        ttk.Checkbutton(
+            subject_header,
+            text="Descending",
+            variable=self.subject_sort_desc,
+            command=self._on_subject_sort_toggle,
+        ).pack(side=RIGHT)
         subject_scroll = Scrollbar(subject_frame)
         subject_scroll.pack(side=RIGHT, fill=Y)
         self.subject_list = Listbox(subject_frame, exportselection=False)
@@ -551,12 +561,26 @@ class RajaAnnotationApp:
     def _populate_subjects(self) -> None:
         if self.dataset is None:
             return
+        current_selection = self.subject_list.curselection()
+        selected_subject = None
+        if current_selection:
+            selected_subject = self.subject_list.get(current_selection[0])
         self.subject_list.delete(0, END)
-        for subject_id in self.dataset.subjects():
+        subjects = sorted(
+            self.dataset.subjects(),
+            key=subject_sort_key,
+            reverse=bool(self.subject_sort_desc.get()),
+        )
+        for subject_id in subjects:
             self.subject_list.insert(END, subject_id)
-        if self.dataset.subjects():
-            self.subject_list.selection_set(0)
+        if subjects:
+            selection_index = subjects.index(selected_subject) if selected_subject in subjects else 0
+            self.subject_list.selection_set(selection_index)
+            self.subject_list.see(selection_index)
             self._handle_subject_selection()
+
+    def _on_subject_sort_toggle(self) -> None:
+        self._populate_subjects()
 
     def _handle_subject_selection(self) -> None:
         if self.dataset is None:
