@@ -143,10 +143,14 @@ class RajaAnnotationApp:
         self.summary_completion_var = StringVar(value="")
 
         self.summary_tree: ttk.Treeview
+        self.summary_detail_tree: ttk.Treeview
         self.summary_canvas: Canvas
         self.summary_canvas_width = 760
         self.summary_canvas_height = 280
         self._summary_bar_regions: list[tuple[float, float, str]] = []
+        self._summary_detail_sort_column: str | None = None
+        self._summary_detail_sort_reverse = False
+        self._annotation_count_cache: dict[Path, int] = {}
 
         self.start_entry: Entry
         self.end_entry: Entry
@@ -420,6 +424,45 @@ class RajaAnnotationApp:
 
         self.summary_tree.bind("<Double-1>", lambda *_: self._on_summary_row_activate())
 
+        detail_frame = Frame(parent)
+        detail_frame.pack(fill=BOTH, expand=True, padx=8, pady=(0, 8))
+        Label(
+            detail_frame,
+            text=(
+                "FIF details with annotation counts. Double-click a row to jump "
+                "to the FIF Status tab for that recording."
+            ),
+            wraplength=700,
+            justify="left",
+        ).pack(anchor="w", pady=(0, 4))
+
+        detail_columns = ("subject", "session", "status", "annotations")
+        self.summary_detail_tree = ttk.Treeview(
+            detail_frame, columns=detail_columns, show="headings", height=8
+        )
+        detail_headings = ["Subject", "Session", "Status", "Annotations"]
+        for column, heading in zip(detail_columns, detail_headings):
+            self.summary_detail_tree.heading(
+                column,
+                text=heading,
+                command=lambda c=column: self._sort_summary_detail_table(c),
+            )
+            width = 160 if column == "session" else 140
+            if column == "subject":
+                width = 150
+            self.summary_detail_tree.column(column, width=width, anchor="w")
+
+        detail_scroll = Scrollbar(
+            detail_frame, orient="vertical", command=self.summary_detail_tree.yview
+        )
+        self.summary_detail_tree.configure(yscrollcommand=detail_scroll.set)
+        self.summary_detail_tree.pack(side=LEFT, fill=BOTH, expand=True)
+        detail_scroll.pack(side=RIGHT, fill=Y)
+
+        self.summary_detail_tree.bind(
+            "<Double-1>", lambda *_: self._on_summary_detail_row_activate()
+        )
+
         chart_frame = Frame(parent)
         chart_frame.pack(fill=BOTH, expand=True, padx=8, pady=(0, 12))
         self.summary_canvas = Canvas(
@@ -439,6 +482,15 @@ class RajaAnnotationApp:
         if not selection:
             return
         values = self.summary_tree.item(selection[0], "values")
+        if values:
+            self._focus_subject(values[0])
+            self.notebook.select(self.status_tab)
+
+    def _on_summary_detail_row_activate(self) -> None:
+        selection = self.summary_detail_tree.selection()
+        if not selection:
+            return
+        values = self.summary_detail_tree.item(selection[0], "values")
         if values:
             self._focus_subject(values[0])
             self.notebook.select(self.status_tab)
@@ -647,12 +699,32 @@ class RajaAnnotationApp:
 
         return data, total_completed, total_pending
 
+    def _collect_summary_detail_stats(self) -> list[tuple[str, str, str, int]]:
+        if self.dataset is None:
+            return []
+
+        details: list[tuple[str, str, str, int]] = []
+        for subject in sorted(self.dataset.sessions_by_subject, key=subject_sort_key):
+            sessions = sorted(
+                self.dataset.sessions_by_subject[subject], key=lambda s: s.session_name
+            )
+            for session in sessions:
+                status = self._status_value_for_session(session)
+                annotations = self._annotation_count_for_session(session)
+                details.append(
+                    (session.subject_id, session.session_name, status, annotations)
+                )
+
+        return details
+
     def _refresh_summary(self) -> None:
         if not hasattr(self, "summary_tree"):
             return
 
         for child in self.summary_tree.get_children():
             self.summary_tree.delete(child)
+        for child in self.summary_detail_tree.get_children():
+            self.summary_detail_tree.delete(child)
 
         if self.dataset is None:
             self._clear_summary()
@@ -681,12 +753,24 @@ class RajaAnnotationApp:
             self._sort_summary_table(self._summary_sort_column, toggle=False)
         self._draw_summary_chart(data)
 
+        detail_rows = self._collect_summary_detail_stats()
+        for subject, session_name, status, annotation_count in detail_rows:
+            self.summary_detail_tree.insert(
+                "", "end", values=(subject, session_name, status, annotation_count)
+            )
+
+        if self._summary_detail_sort_column:
+            self._sort_summary_detail_table(self._summary_detail_sort_column, toggle=False)
+
     def _clear_summary(self) -> None:
         self.summary_total_var.set("No FIF data loaded.")
         self.summary_completion_var.set("")
         if hasattr(self, "summary_tree"):
             for child in self.summary_tree.get_children():
                 self.summary_tree.delete(child)
+        if hasattr(self, "summary_detail_tree"):
+            for child in self.summary_detail_tree.get_children():
+                self.summary_detail_tree.delete(child)
         if hasattr(self, "summary_canvas"):
             self.summary_canvas.delete("all")
             self.summary_canvas.create_text(
@@ -769,6 +853,16 @@ class RajaAnnotationApp:
             )
             self._summary_bar_regions.append((base_x, base_x + bar_width, subject))
 
+    def _annotation_count_for_session(self, session: SessionInfo) -> int:
+        cached = self._annotation_count_cache.get(session.annotation_csv)
+        if cached is not None:
+            return cached
+
+        frame = load_annotation_frame(session.annotation_csv)
+        count = len(frame)
+        self._annotation_count_cache[session.annotation_csv] = count
+        return count
+
     def _sort_summary_table(self, column: str, *, toggle: bool = True) -> None:
         reverse = self._summary_sort_reverse if self._summary_sort_column == column else False
         if toggle:
@@ -791,6 +885,36 @@ class RajaAnnotationApp:
 
         for index, (_, iid) in enumerate(sorted(children, key=key_fn, reverse=reverse)):
             self.summary_tree.move(iid, "", index)
+
+    def _sort_summary_detail_table(self, column: str, *, toggle: bool = True) -> None:
+        reverse = (
+            self._summary_detail_sort_reverse if self._summary_detail_sort_column == column else False
+        )
+        if toggle:
+            reverse = not reverse if self._summary_detail_sort_column == column else False
+        self._summary_detail_sort_column = column
+        self._summary_detail_sort_reverse = reverse
+
+        children = [
+            (self.summary_detail_tree.item(child, "values"), child)
+            for child in self.summary_detail_tree.get_children("")
+        ]
+
+        def key_fn(item: tuple[tuple[str, str, str, str], str]):
+            values, _ = item
+            if column == "subject":
+                return subject_sort_key(values[0])
+            if column == "status":
+                return status_sort_key(values[2])
+            if column == "annotations":
+                try:
+                    return int(values[3])
+                except (TypeError, ValueError):
+                    return 0
+            return values[1].lower()
+
+        for index, (_, iid) in enumerate(sorted(children, key=key_fn, reverse=reverse)):
+            self.summary_detail_tree.move(iid, "", index)
 
     def _focus_subject(self, subject_id: str) -> None:
         if self.dataset is None:
@@ -872,6 +996,7 @@ class RajaAnnotationApp:
         self.data_root = pair.data_root
         self.cvat_root = pair.cvat_root
         self.active_pair_name = pair.name
+        self._annotation_count_cache = {}
         self.status_var.set(
             f"Using path pair '{pair.name}' (data: {self.data_root}, CVAT: {self.cvat_root})"
         )
@@ -1233,6 +1358,9 @@ class RajaAnnotationApp:
         merged = merge_updated_annotations(updated_inside, outside)
         save_annotations(self.selected_session.annotation_csv, merged)
         self.annotation_frame = merged
+        self._annotation_count_cache[self.selected_session.annotation_csv] = len(
+            self.annotation_frame
+        )
         summary_msg = (
             f"Saved segment {start:.1f}-{end:.1f} s for "
             f"{self.selected_session.subject_id}/{self.selected_session.session_name} "
@@ -1259,6 +1387,7 @@ class RajaAnnotationApp:
         if detail_parts:
             self._log("; ".join(detail_parts))
         self.status_var.set(summary_msg)
+        self._refresh_summary()
 
     def _refresh_current_session(self) -> None:
         if self.selected_session is None:
