@@ -71,7 +71,13 @@ from .status_store import StatusStore
 logger = logging.getLogger(__name__)
 
 
-STATUS_OPTIONS = ("Pending", "Ongoing", "Complete")
+STATUS_OPTIONS = (
+    "Pending",
+    "Ongoing",
+    "check_complete_contain_issue",
+    "have_issue_check_again_with_cvat",
+    "Complete",
+)
 STATUS_ORDER = {name: index for index, name in enumerate(STATUS_OPTIONS)}
 
 
@@ -342,8 +348,8 @@ class RajaAnnotationApp:
         Label(
             parent,
             text=(
-                "Track FIF recording status. Select a session to set its status to "
-                "Pending (default), Ongoing, or Complete."
+                "Track FIF recording status. Select a session to set its status to one "
+                "of the available options: " + ", ".join(STATUS_OPTIONS) + "."
             ),
             wraplength=600,
             justify="left",
@@ -409,7 +415,7 @@ class RajaAnnotationApp:
         self.summary_tree = ttk.Treeview(
             table_frame, columns=columns, show="headings", height=10
         )
-        headings = ["Subject", "Completed", "Pending", "Completion %"]
+        headings = ["Subject", "Completed", "Not Complete", "Completion %"]
         for column, heading in zip(columns, headings):
             self.summary_tree.heading(
                 column, text=heading, command=lambda c=column: self._sort_summary_table(c)
@@ -676,14 +682,17 @@ class RajaAnnotationApp:
         for index, (_, iid) in enumerate(sorted(children, key=key_fn, reverse=reverse)):
             self.status_tree.move(iid, "", index)
 
-    def _collect_summary_stats(self) -> tuple[list[tuple[str, int, int, float]], int, int]:
+    def _collect_summary_stats(
+        self,
+    ) -> tuple[list[tuple[str, int, int, float]], int, int, dict[str, int]]:
         if self.dataset is None:
-            return [], 0, 0
+            return [], 0, 0, {status: 0 for status in STATUS_OPTIONS}
 
         subjects = sorted(self.dataset.sessions_by_subject, key=subject_sort_key)
         data: list[tuple[str, int, int, float]] = []
         total_completed = 0
-        total_pending = 0
+        total_not_complete = 0
+        status_totals: dict[str, int] = {status: 0 for status in STATUS_OPTIONS}
 
         for subject in subjects:
             sessions = self.dataset.sessions_by_subject[subject]
@@ -695,9 +704,13 @@ class RajaAnnotationApp:
             completion_rate = (completed / total * 100) if total else 0.0
             data.append((subject, completed, pending, completion_rate))
             total_completed += completed
-            total_pending += pending
+            total_not_complete += pending
 
-        return data, total_completed, total_pending
+            for session in sessions:
+                status = self._status_value_for_session(session)
+                status_totals[status] = status_totals.get(status, 0) + 1
+
+        return data, total_completed, total_not_complete, status_totals
 
     def _collect_summary_detail_stats(self) -> list[tuple[str, str, str, int]]:
         if self.dataset is None:
@@ -730,13 +743,14 @@ class RajaAnnotationApp:
             self._clear_summary()
             return
 
-        data, total_completed, total_pending = self._collect_summary_stats()
-        overall = total_completed + total_pending
+        data, total_completed, total_not_complete, status_totals = self._collect_summary_stats()
+        overall = total_completed + total_not_complete
         if overall:
             completion_rate = total_completed / overall * 100
-            self.summary_total_var.set(
-                f"Completed: {total_completed} / {overall} | Pending: {total_pending}"
-            )
+            status_parts = [
+                f"{status}: {status_totals.get(status, 0)}" for status in STATUS_OPTIONS
+            ]
+            self.summary_total_var.set(" | ".join(status_parts))
             self.summary_completion_var.set(f"Overall completion: {completion_rate:.1f}%")
         else:
             self.summary_total_var.set("No FIF data loaded.")
@@ -813,7 +827,7 @@ class RajaAnnotationApp:
         self.summary_canvas.create_rectangle(10, legend_y - 8, 30, legend_y + 8, fill="#5cb85c", outline="")
         self.summary_canvas.create_text(35, legend_y, anchor=NW, text="Completed", fill="#222")
         self.summary_canvas.create_rectangle(150, legend_y - 8, 170, legend_y + 8, fill="#f0ad4e", outline="")
-        self.summary_canvas.create_text(175, legend_y, anchor=NW, text="Pending", fill="#222")
+        self.summary_canvas.create_text(175, legend_y, anchor=NW, text="Not Complete", fill="#222")
 
         for index, (subject, completed, pending, _) in enumerate(data):
             base_x = margin_left + index * group_width + group_width * 0.2
