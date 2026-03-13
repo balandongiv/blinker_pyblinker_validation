@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import logging
 import os
+import sys
 from pathlib import Path
 from typing import Dict, Iterable, Optional
 
@@ -12,8 +13,16 @@ from typing import Dict, Iterable, Optional
 import pandas as pd
 import numpy as np
 
-from src.matlab_runner.helper import to_dataframe
-from src.utils.config_utils import get_dataset_root, load_config
+try:
+    from src.matlab_runner.helper import to_dataframe
+    from src.utils.config_utils import get_dataset_root, get_path_setting, load_config
+except ModuleNotFoundError:
+    # Support `python src/matlab_runner/execute_blinker.py` from repo root.
+    repo_root = Path(__file__).resolve().parents[2]
+    if str(repo_root) not in sys.path:
+        sys.path.insert(0, str(repo_root))
+    from src.matlab_runner.helper import to_dataframe
+    from src.utils.config_utils import get_dataset_root, get_path_setting, load_config
 
 
 BLINKER_KEYS = ("blinkFits", "blinkProps", "blinkStats", "blinks", "params")
@@ -45,8 +54,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--eeglab-root",
         type=Path,
-        default=os.environ.get("EEGLAB_ROOT"),
-        help="Path to the EEGLAB installation (defaults to $EEGLAB_ROOT).",
+        default=None,
+        help="Path to the EEGLAB installation.",
     )
     parser.add_argument(
         "--project-root",
@@ -74,18 +83,95 @@ def iter_edf_files(dataset_root: Path) -> Iterable[Path]:
             yield path
 
 
+def _clean_path_text(raw_value: object) -> str:
+    return str(raw_value).strip().strip('"').strip("'")
+
+
+def _resolve_config_path(config_path: Path) -> Path:
+    """Resolve config path from CWD first, then repository root for script-mode runs."""
+
+    candidate = Path(config_path).expanduser()
+    if candidate.exists():
+        return candidate
+
+    if candidate.is_absolute():
+        return candidate
+
+    repo_relative = Path(__file__).resolve().parents[2] / candidate
+    if repo_relative.exists():
+        return repo_relative
+
+    return candidate
+
+
+def _resolve_eeglab_root(args: argparse.Namespace, config: dict | None) -> Path | None:
+    """Resolve EEGLAB path with precedence: CLI > env var > YAML config."""
+
+    if args.eeglab_root is not None:
+        return Path(_clean_path_text(args.eeglab_root)).expanduser()
+
+    env_value = os.environ.get("EEGLAB_ROOT")
+    if env_value and env_value.strip():
+        return Path(_clean_path_text(env_value)).expanduser()
+
+    if config is None:
+        return None
+
+    try:
+        config_path = get_path_setting(config, "eeglab_root")
+    except KeyError:
+        return None
+
+    return Path(_clean_path_text(config_path)).expanduser()
+
+
+def _resolve_eeglab_paths(eeglab_root: Path, blinker_plugin: str) -> tuple[Path, Path]:
+    """Resolve EEGLAB root and Blinker plugin path.
+
+    Accepts either the EEGLAB root (contains ``plugins``) or the plugins folder itself.
+    """
+
+    candidate = Path(eeglab_root)
+    plugins_root = candidate / "plugins"
+
+    if plugins_root.is_dir():
+        resolved_eeglab_root = candidate
+    elif candidate.name.lower() == "plugins" and candidate.is_dir():
+        plugins_root = candidate
+        resolved_eeglab_root = candidate.parent
+    else:
+        raise FileNotFoundError(
+            f"Invalid EEGLAB root: {candidate}. Expected an EEGLAB directory containing "
+            "a 'plugins' folder, or the plugins folder itself."
+        )
+
+    plugin_path = plugins_root / blinker_plugin
+    if not plugin_path.is_dir():
+        raise FileNotFoundError(
+            f"Blinker plugin not found: {plugin_path}. "
+            "Check --blinker-plugin or your EEGLAB installation."
+        )
+
+    return resolved_eeglab_root, plugin_path
+
+
 def start_matlab(eeglab_root: Path, project_root: Path, blinker_plugin: str):
-    import matlab.engine
+    try:
+        import matlab.engine
+    except ModuleNotFoundError as exc:
+        raise ModuleNotFoundError(
+            "matlab.engine is not installed. Install MATLAB Engine for Python "
+            "and ensure it is available in this environment."
+        ) from exc
+
+    resolved_eeglab_root, plugin_path = _resolve_eeglab_paths(eeglab_root, blinker_plugin)
 
     eng = matlab.engine.start_matlab("-nojvm -nosplash -nodesktop")
 
     eng.addpath(eng.genpath(str(project_root)), nargout=0)
-    eng.addpath(str(eeglab_root), nargout=0)
+    eng.addpath(str(resolved_eeglab_root), nargout=0)
     eng.eeglab("nogui", nargout=0)
-    eng.addpath(
-        eng.genpath(str(Path(eeglab_root) / "plugins" / blinker_plugin)),
-        nargout=0,
-    )
+    eng.addpath(eng.genpath(str(plugin_path)), nargout=0)
 
     return eng
 
@@ -111,7 +197,7 @@ def _prepare_for_pickle(frame: pd.DataFrame) -> pd.DataFrame:
     if frame.empty:
         return frame
 
-    return frame.applymap(_serialise_value)
+    return frame.map(_serialise_value)
 
 
 def save_outputs(edf_path: Path, frames: Dict[str, pd.DataFrame], overwrite: bool) -> None:
@@ -201,19 +287,29 @@ def main() -> None:
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
-    if args.eeglab_root is None:
-        raise ValueError(
-            "EEGLAB root path not provided. Use --eeglab-root or set $EEGLAB_ROOT."
-        )
+    config = None
+    config_path = _resolve_config_path(args.config)
 
     dataset_root = args.dataset_root
     if dataset_root is None:
-        config = load_config(args.config)
+        config = load_config(config_path)
         dataset_root = get_dataset_root(config)
+
+    eeglab_root = _resolve_eeglab_root(args, config)
+    if eeglab_root is None:
+        if config is None:
+            config = load_config(config_path)
+            eeglab_root = _resolve_eeglab_root(args, config)
+
+    if eeglab_root is None:
+        raise ValueError(
+            "EEGLAB root path not provided. Set one via --eeglab-root, "
+            "$EEGLAB_ROOT, or config/config.yaml -> paths.eeglab_root."
+        )
 
     run_blinker_batch(
         dataset_root=dataset_root,
-        eeglab_root=args.eeglab_root,
+        eeglab_root=eeglab_root,
         project_root=args.project_root,
         blinker_plugin=args.blinker_plugin,
         edf_files=args.edf,

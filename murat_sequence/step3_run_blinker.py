@@ -6,18 +6,32 @@ import argparse
 import json
 import logging
 import pickle
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterable
 
 import pandas as pd
 
-from src.matlab_runner.execute_blinker import (
-    BLINKER_KEYS,
-    DEFAULT_PROJECT_ROOT,
-    run_blinker as matlab_run_blinker,
-    start_matlab as matlab_start_matlab,
-)
+try:
+    from src.matlab_runner.execute_blinker import (
+        BLINKER_KEYS,
+        DEFAULT_PROJECT_ROOT,
+        run_blinker as matlab_run_blinker,
+        start_matlab as matlab_start_matlab,
+    )
+except ModuleNotFoundError:
+    # Support `python murat_sequence/step3_run_blinker.py` from repo root.
+    repo_root = Path(__file__).resolve().parents[1]
+    if str(repo_root) not in sys.path:
+        sys.path.insert(0, str(repo_root))
+    from src.matlab_runner.execute_blinker import (
+        BLINKER_KEYS,
+        DEFAULT_PROJECT_ROOT,
+        run_blinker as matlab_run_blinker,
+        start_matlab as matlab_start_matlab,
+    )
+
 from src.utils.blink_events import prepare_blinker_frame
 from src.utils.config_utils import (
     DEFAULT_CONFIG_PATH,
@@ -145,6 +159,7 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     processed = 0
+    skipped = 0
     try:
         eng = matlab_start_matlab(
             cfg.eeglab_root,
@@ -164,6 +179,7 @@ def main(argv: list[str] | None = None) -> int:
                     edf_path,
                     target,
                 )
+                skipped += 1
                 continue
 
             try:
@@ -178,7 +194,12 @@ def main(argv: list[str] | None = None) -> int:
         except Exception:  # noqa: BLE001
             LOGGER.warning("Failed to close MATLAB engine cleanly")
 
-    LOGGER.info("Blinker pipeline completed for %s/%s file(s)", processed, len(edf_files))
+    LOGGER.info(
+        "Blinker pipeline finished: %s processed, %s skipped, out of %s total file(s)",
+        processed,
+        skipped,
+        len(edf_files),
+    )
     return 0
 
 
