@@ -64,7 +64,7 @@ def convert_all(
 
     results: list[ConversionResult] = []
     for mat_path in iter_mat_files(root):
-        recording_id = mat_path.stem
+        recording_id = mat_path.parent.name
         fif_path = mat_path.with_name(f"{recording_id}.fif")
         edf_path = mat_path.with_name(f"{recording_id}.edf")
         try:
@@ -167,20 +167,20 @@ def main(argv: list[str] | None = None) -> int:
     channel_arg = args.channels if args.channels else args.channel_spec
     channels = parse_channel_argument(channel_arg)
 
-    if not args.skip_download:
-        dataset_file = args.dataset_file or resolve_dataset_file(
-            DEFAULT_DATASET_FILE,
-            reference_dir=Path(__file__).resolve().parent,
-        )
-        try:
-            download_dataset(
-                dataset_file=dataset_file,
-                root=args.root,
-                limit=limit,
-            )
-        except DownloadError as exc:
-            LOGGER.error("Dataset download failed: %s", exc)
-            return 1
+    # if not args.skip_download:
+    #     dataset_file = args.dataset_file or resolve_dataset_file(
+    #         DEFAULT_DATASET_FILE,
+    #         reference_dir=Path(__file__).resolve().parent,
+    #     )
+        # try:
+        #     download_dataset(
+        #         dataset_file=dataset_file,
+        #         root=args.root,
+        #         limit=limit,
+        #     )
+        # except DownloadError as exc:
+        #     LOGGER.error("Dataset download failed: %s", exc)
+        #     return 1
 
     try:
         results = convert_all(
