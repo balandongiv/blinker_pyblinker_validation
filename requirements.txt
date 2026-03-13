@@ -9,7 +9,7 @@ tqdm
 
 # Neuroimaging / signal analysis
 mne
-
+edfio
 # Utilities
 gdown
 pyyaml
