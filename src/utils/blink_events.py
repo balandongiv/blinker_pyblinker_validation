@@ -50,5 +50,5 @@ def prepare_blinker_frame(frame: pd.DataFrame) -> pd.DataFrame:
 
     if frame.empty:
         return frame
-    return frame.applymap(lambda x: x.tolist() if isinstance(x, np.ndarray) else x)
+    return frame.map(lambda x: x.tolist() if isinstance(x, np.ndarray) else x)
 
