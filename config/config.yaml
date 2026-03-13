@@ -17,8 +17,8 @@
 paths:
   root_dir: "."
   dataset_file: "config/murat_2018_dataset.txt"
-  download_root: "data/murat_2018"
-  raw_downsampled: "data/murat_2018"
+  download_root: "D:/dataset/murat_2018"
+  raw_downsampled: "D:/dataset/murat_2018"
   eeglab_root: "D:/code development/matlab_plugin/eeglab2025.1.0"
 
 defaults:
