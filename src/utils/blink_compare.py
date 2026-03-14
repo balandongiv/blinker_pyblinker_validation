@@ -7,10 +7,9 @@ import math
 import pickle
 from pathlib import Path
 from typing import Iterable, Mapping
-import os
 import numpy as np
 import pandas as pd
-
+from pyblinker.utils.evaluation import blink_comparison
 import mne
 from src.utils.stat import RecordingComparison
 LOGGER = logging.getLogger(__name__)
@@ -214,13 +213,76 @@ def render_report(
     report_path.write_text("\n".join(lines), encoding="utf8")
     return report_path
 
+def process_recording_comparison(
+    recording_dir: Path,
+    py_path: Path,
+    blinker_path: Path,
+    fif_path: Path,
+    fif_fname: str,
+    *,
+    tolerance_samples: int,
+    overwrite: bool,
+) -> RecordingComparison:
+    py_payload = load_pickle(py_path)
+    blinker_payload = load_pickle(blinker_path)
+
+    channel = py_payload["metrics"]["channel"]
+
+    raw = mne.io.read_raw_fif(fif_path, preload=True)
+    signal = raw.get_data(picks=[channel])[0]
+    py_events, blinker_events = prepare_event_tables(py_payload, blinker_payload)
+
+    n_preview_rows = 10
+    n_diff_rows = 20
+    sample_rate = 200
+    comparison = blink_comparison.compare_detected_vs_ground_truth(
+        py_events,
+        blinker_events,
+        sample_rate,
+        tolerance_samples=tolerance_samples,
+        n_preview_rows=n_preview_rows,
+        n_diff_rows=n_diff_rows,
+        detected_signal=signal,
+    )
+
+    if comparison.annotations is not None:
+        annotations_path = (recording_dir / fif_fname).with_suffix(".csv")
+        annotations_frame = pd.DataFrame(
+            {
+                "onset": comparison.annotations.onset,
+                "duration": comparison.annotations.duration,
+                "description": comparison.annotations.description,
+            }
+        )
+
+        if annotations_path.exists() and not overwrite:
+            LOGGER.info("File %s already exists; overwrite disabled, not saving", annotations_path)
+        else:
+            if annotations_path.exists() and overwrite:
+                LOGGER.info("File %s exists; overwrite enabled, overwriting", annotations_path)
+            else:
+                LOGGER.info("Saving annotations to %s", annotations_path)
+
+            annotations_frame.to_csv(annotations_path, index=False)
+
+    to_plot = True
+    if to_plot:
+        raw.set_annotations(comparison.annotations)
+        raw.plot(block=True)
+
+    return RecordingComparison(
+        recording_id=recording_dir.name,
+        py_events=py_events,
+        blinker_events=blinker_events,
+        metrics=comparison.metrics,
+    )
 
 
 def compare_recordings_blinker_vs_pyblinker(
     root: Path,
     *,
     tolerance_samples: int,
-    comparator,
+    overwrite: bool = False,
 ) -> list[RecordingComparison]:
     """Compute recording comparisons using ``comparator`` for alignment metrics."""
 
@@ -230,6 +292,7 @@ def compare_recordings_blinker_vs_pyblinker(
         py_path = recording_dir / "pyblinker_results.pkl"
         blinker_path = recording_dir / "blinker_results.pkl"
         fif_fname = f"{recording_dir.name}.fif"
+        fif_path = recording_dir / fif_fname
 
         if not py_path.exists() or not blinker_path.exists():
             LOGGER.debug(
@@ -237,62 +300,20 @@ def compare_recordings_blinker_vs_pyblinker(
             )
             continue
 
-        py_payload = load_pickle(py_path)
-        blinker_payload = load_pickle(blinker_path)
-
-        channel = py_payload["metrics"]["channel"]
-        raw = mne.io.read_raw_fif(recording_dir / fif_fname, preload=True)
-        signal = raw.get_data(picks=[channel])[0]
-        py_events, blinker_events = prepare_event_tables(py_payload,blinker_payload)
-
-        n_preview_rows = 10
-        n_diff_rows = 20
-        sample_rate=200
-        comparison = comparator.compare_detected_vs_ground_truth(
-            py_events,
-            blinker_events,
-            sample_rate,
-            tolerance_samples=tolerance_samples,
-            n_preview_rows=n_preview_rows,
-            n_diff_rows=n_diff_rows,
-            detected_signal=signal,
-        )
-
-        overwrite=False
-        if comparison.annotations is not None:
-            annotations_path = (recording_dir / fif_fname).with_suffix(".csv")
-            annotations_frame = pd.DataFrame(
-                {
-                    "onset": comparison.annotations.onset,
-                    "duration": comparison.annotations.duration,
-                    "description": comparison.annotations.description,
-                }
-            )
-
-            # Check if file exists
-
-            if os.path.exists(annotations_path) and not overwrite:
-                LOGGER.info("File %s already exists; overwrite disabled, not saving", annotations_path)
-            else:
-                if os.path.exists(annotations_path) and overwrite:
-                    LOGGER.info("File %s exists; overwrite enabled, overwriting", annotations_path)
-                else:
-                    LOGGER.info("Saving annotations to %s", annotations_path)
-
-                annotations_frame.to_csv(annotations_path, index=False)
+        if not fif_path.exists():
+            LOGGER.info("Skipping %s because FIF file is missing: %s", recording_dir.name, fif_path)
+            continue
 
         comparisons.append(
-            RecordingComparison(
-                recording_id=recording_dir.name,
-                py_events=py_events,
-                blinker_events=blinker_events,
-                metrics=comparison.metrics
+            process_recording_comparison(
+                recording_dir,
+                py_path,
+                blinker_path,
+                fif_path,
+                fif_fname,
+                tolerance_samples=tolerance_samples,
+                overwrite=overwrite,
             )
         )
-
-        to_plot = False
-        if to_plot:
-            raw.set_annotations(comparison.annotations)
-            raw.plot(block=True)
 
     return comparisons

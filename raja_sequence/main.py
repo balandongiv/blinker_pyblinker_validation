@@ -66,6 +66,7 @@ def process_fif_file(fif_file, subject_id, path_dic, **kwargs):
 				 ├─ S1\
 				 │  ├─ S01_20170519_043933\
 				 │  │  ├─ ear_eog.fif
+
 				 │  │  └─ (other FIF / aux files ...)
 				 │  └─ S01_20170519_043933_2\
 				 │     ├─ ear_eog.fif

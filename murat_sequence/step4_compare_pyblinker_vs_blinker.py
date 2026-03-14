@@ -29,12 +29,12 @@ from src.utils.config_utils import (  # noqa: E402 - deferred import for path se
     load_config,
 )
 
-try:  # pragma: no cover - optional dependency during tests
-    from pyblinker.utils.evaluation import blink_comparison as _blink_comparison
-except ModuleNotFoundError:  # pragma: no cover - pyblinker not installed for tests
-    _blink_comparison = None
-else:  # pragma: no cover - re-export for mypy / linters
-    from pyblinker.utils.evaluation import blink_comparison  # noqa: F401
+# try:  # pragma: no cover - optional dependency during tests
+#     from pyblinker.utils.evaluation import blink_comparison as _blink_comparison
+# except ModuleNotFoundError:  # pragma: no cover - pyblinker not installed for tests
+#     _blink_comparison = None
+# else:  # pragma: no cover - re-export for mypy / linters
+from pyblinker.utils.evaluation import blink_comparison
 
 
 CONFIG = load_config(DEFAULT_CONFIG_PATH)
@@ -72,19 +72,19 @@ def main(argv: list[str] | None = None) -> int:
         format="%(asctime)s %(levelname)s %(message)s",
     )
 
-    if _blink_comparison is None:
-        LOGGER.error(
-            "pyblinker.utils.evaluation.blink_comparison is unavailable; install pyblinker to run comparisons",
-        )
-        return 1
-
+    # if _blink_comparison is None:
+    #     LOGGER.error(
+    #         "pyblinker.utils.evaluation.blink_comparison is unavailable; install pyblinker to run comparisons",
+    #     )
+    #     return 1
+    overwrite=False
     output_dir = args.root / "reports"
     output_dir.mkdir(parents=True, exist_ok=True)
 
     comparisons: list[RecordingComparison] = compare_recordings_blinker_vs_pyblinker(
         args.root,
         tolerance_samples=args.tolerance_samples,
-        comparator=_blink_comparison,
+        overwrite=overwrite,
     )
     if not comparisons:
         LOGGER.warning("No recordings had both pyblinker and blinker outputs")
