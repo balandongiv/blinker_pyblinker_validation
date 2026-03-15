@@ -1,7 +1,10 @@
 # Ignore downloaded test data
 
 __pycache__/
-/mock_data/
 /data/
 /.idea/copilot.data.migration.agent.xml
 /config/raja_status.yaml
+/.pytest_cache/
+/scratch_test_cases/
+/reports/validation/*
+!/reports/validation/.gitkeep

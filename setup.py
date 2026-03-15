@@ -23,6 +23,6 @@ setup(
     name=NAME,
     version=VERSION,
     description=DESCRIPTION,
-    packages=find_packages(where="src"),
-    package_dir={"": "src"},
+    packages=find_packages(where=".", include=["src*", "tutorial*"]),
+    package_dir={"": "."},
 )

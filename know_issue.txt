@@ -1,0 +1,6 @@
+2. Python RuntimeWarning (Format Conversion)
+The Issue: When converting the .fif files to .edf format, the EDF format required the data to be in equal-length blocks.
+
+Log Output: RuntimeWarning: EDF format requires equal-length data blocks, so [X.XX] seconds of edge values were appended to all channels when writing the final block. (Occurred for S1, S2, S3, S4, S5, S6, S7, S10, S11).
+
+Impact: Minor. Your script automatically padded the end of each recording with a fraction of a second of artificial data to satisfy the EDF format requirements. This shouldn't affect your overall blink statistics.

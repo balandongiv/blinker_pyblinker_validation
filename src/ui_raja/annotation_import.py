@@ -4,15 +4,15 @@ from __future__ import annotations
 
 import json
 import logging
-import tempfile
 import shutil
+import tempfile
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
 import pandas as pd
 
-from raja_sequence.helper import load_ground_truth, restructure_blink_dataframe, unzip_file
+from .cvat_helpers import load_ground_truth, restructure_blink_dataframe, unzip_file
 
 from .constants import ANNOTATION_COLUMNS, DEFAULT_SAMPLING_RATE
 from .discovery import SessionInfo
@@ -52,7 +52,7 @@ def load_shift_value(config_path: Path, session: SessionInfo) -> int:
         logger.warning("Config file %s not found; using zero shift.", config_path)
         return 0
     try:
-        content = json.loads(config_path.read_text())
+        content = json.loads(config_path.read_text(encoding="utf8"))
         return int(content["data"][session.subject_id]["shift_cvat"][session.session_name])
     except Exception as exc:  # pragma: no cover - defensive
         logger.warning("Could not read shift from %s: %s", config_path, exc)
