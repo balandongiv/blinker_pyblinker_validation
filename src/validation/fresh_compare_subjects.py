@@ -21,6 +21,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from src.validation._paths import REPORTS_DIR
+from src.validation.blinker_params import build_experiment_blink_params
 from src.validation.blink_compare import load_pickle, prepare_event_tables
 from src.validation.stat import RecordingComparison, build_overall_summary, build_summary_frame
 
@@ -310,6 +311,7 @@ def _run_detector(
             _align_fif_to_edf_parity(raw, comparison_raw_path)
 
     sampling_rate = float(raw.info["sfreq"])
+    blink_params = build_experiment_blink_params()
     detector = BlinkDetector(
         raw.copy(),
         visualize=False,
@@ -320,6 +322,7 @@ def _run_detector(
         n_jobs=1,
         use_multiprocessing=False,
         pick_types_options=pick_types_options,
+        blink_params=blink_params,
     )
     annotations, channel, n_good, blink_details, _fig_data, selected = detector.get_blink()
     payload = {
@@ -330,6 +333,9 @@ def _run_detector(
             "sampling_rate_hz": float(detector.raw_data.info["sfreq"]),
         },
         "selected_channel": selected.copy(),
+        "params": {
+            "blink_params": blink_params,
+        },
     }
     return payload, annotations, channel
 

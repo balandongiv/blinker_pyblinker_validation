@@ -1,7 +1,7 @@
 import os
 
 root_dir = r"D:\dataset\murat_2018"
-target_files = {"pyblinker_results.json", "pyblinker_results.pkl"}
+target_files = {"pyblinker_results.json", "pyblinker_results.pkl","ctorparamexp01_pyblinker_results.pkl","tol20_baseline_v1_murat_pyblinker_results.pkl"}
 
 for folder, subfolders, files in os.walk(root_dir):
 	for filename in files:

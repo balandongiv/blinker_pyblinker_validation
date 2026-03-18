@@ -73,6 +73,75 @@ Why editable mode matters:
 When shared logic changes, follow `good_practice.md` and use a new experiment
 version or run id.
 
+## Experiment Blink Parameters
+
+For the canonical MATLAB-vs-PyBlinker comparison experiments in this repository,
+the blink-detector configuration is made explicit instead of relying on
+implicit defaults.
+
+The validation runners obtain that experiment profile from:
+
+- `src/validation/blinker_params.py`
+- function: `build_experiment_blink_params()`
+
+That file currently defines the following exact values:
+
+```python
+{
+    "std_threshold": 1.50,
+    "min_event_len": 0.05,
+    "min_event_sep": 0.05,
+    "base_fraction": 0.1,
+    "correlation_threshold_top": 0.980,
+    "correlation_threshold_bottom": 0.90,
+    "correlation_threshold_middle": 0.95,
+    "shut_amp_fraction": 0.9,
+    "blink_amp_range_1": 3,
+    "blink_amp_range_2": 50,
+    "good_ratio_threshold": 0.7,
+    "min_good_blinks": 10,
+    "keep_signals": 0,
+    "correlation_threshold": 0.98,
+    "p_avr_threshold": 3,
+    "z_thresholds": np.array([[0.9, 0.98], [2.0, 5.0]]),
+}
+```
+
+These values are intentionally the same as the legacy defaults in the editable
+`pyblinker` checkout, whose source of truth is:
+
+- `pyblinker/pyblinker/blinker/default_setting.py`
+- mapping: `DEFAULT_PARAMS`
+
+Important note about `sfreq`:
+
+- `DEFAULT_PARAMS` in `pyblinker` also contains `sfreq`
+- the validation experiment profile does not pin `sfreq` to a constant value
+- `sfreq` is set at runtime by `BlinkDetector.prepare_raw_signal()` to the
+  actual processed sampling rate for the current recording after
+  filtering/resampling
+
+So for comparison experiments:
+
+- all threshold and filtering-related blink parameters above are explicit
+- `sfreq` is data-dependent and comes from the processed recording, not a
+  hardcoded experiment constant
+
+The canonical comparison runners that inject this explicit profile are:
+
+- `src/validation/fresh_compare_from_csv.py`
+- `src/validation/fresh_compare_subjects.py`
+
+The generated PyBlinker experiment pickle files also store the explicit profile
+under:
+
+```python
+payload["params"]["blink_params"]
+```
+
+That means a saved experiment output is self-describing: you can inspect the
+pickle later and confirm exactly which blink-parameter profile was used.
+
 ## Repository Layout
 
 ```text

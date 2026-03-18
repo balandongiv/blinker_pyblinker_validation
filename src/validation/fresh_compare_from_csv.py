@@ -21,6 +21,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from src.validation._paths import REPORTS_DIR
+from src.validation.blinker_params import build_experiment_blink_params
 from src.validation.blink_compare import load_pickle, process_recording_comparison
 from src.validation.blink_compare_from_csv import CSV_PATH, DATASET_ROOT, TOLERANCE_SAMPLES
 from src.validation.stat import RecordingComparison, build_overall_summary, build_summary_frame
@@ -134,6 +135,7 @@ def _plot_from_saved_payload(recording_id: str, recording_dir: Path, py_path: Pa
 def _run_detector(recording_id: str, recording_dir: Path) -> tuple[dict, mne.Annotations, str]:
     raw = _load_raw(recording_dir, recording_id)
     sampling_rate = float(raw.info["sfreq"])
+    blink_params = build_experiment_blink_params()
 
     detector = BlinkDetector(
         raw.copy(),
@@ -144,6 +146,7 @@ def _run_detector(recording_id: str, recording_dir: Path) -> tuple[dict, mne.Ann
         resample_rate=int(round(sampling_rate)),
         n_jobs=1,
         use_multiprocessing=False,
+        blink_params=blink_params,
     )
     annotations, channel, n_good, blink_details, _fig_data, selected = detector.get_blink()
 
@@ -155,6 +158,9 @@ def _run_detector(recording_id: str, recording_dir: Path) -> tuple[dict, mne.Ann
             "sampling_rate_hz": float(detector.raw_data.info["sfreq"]),
         },
         "selected_channel": selected.copy(),
+        "params": {
+            "blink_params": blink_params,
+        },
     }
     return payload, annotations, channel
 

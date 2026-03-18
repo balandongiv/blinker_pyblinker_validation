@@ -8,3 +8,5 @@ __pycache__/
 /scratch_test_cases/
 /reports/validation/*
 !/reports/validation/.gitkeep
+/pyblinker/
+/ear_eog_experiment/
