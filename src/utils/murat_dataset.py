@@ -9,10 +9,7 @@ from typing import Sequence
 
 import mne
 from mne.export import export_raw
-try:
-	from pyblinker.utils.evaluation import mat_data
-except ImportError:
-	from pyblinker.pyblinker.utils.evaluation import mat_data
+from pyblinker.utils.evaluation import mat_data
 
 
 LOGGER = logging.getLogger(__name__)

@@ -1,0 +1,25 @@
+\section{Methods}
+
+\subsection{Study design}
+
+The study was designed as a software-fidelity benchmark. MATLAB \blinker{} outputs were treated as the reference implementation, and \tool{} outputs were compared recording by recording against those reference event tables. A code change was retained only if it resolved the targeted mismatch and preserved perfect results in complete reruns of both the Murat and SEED validation suites.
+
+\subsection{Datasets}
+
+The first benchmark used the public Murat 2018 motor-imagery EEG resource reported by Kaya \emph{et al.}\supercite{kaya2018} The source publication describes 75 long recording sessions. The local validation harness processed the 74 recordings for which EDF or FIF-compatible inputs were available to the fresh-comparison runner. The second benchmark used the public SEED-VLA and SEED-VRW fatigue-driving EEG datasets described by Luo \emph{et al.}\supercite{luo2024} The local staging area contained 34 EDF recordings, split into 20 laboratory recordings and 14 real-world recordings. No new human participant data were collected for this work.
+
+\subsection{Python and MATLAB pipelines}
+
+Python detections were generated through \tool{} using MNE-Python I/O.\supercite{gramfort2013} Raw EDF or FIF recordings were loaded with MNE, filtered from 1 to \SI{20}{Hz}, and processed at the native sampling rate after rounding the sampling frequency to the nearest integer for resampling. The Murat benchmark used the explicit legacy-default blink-parameter dictionary preserved in the repository: \texttt{std\_threshold = 1.5}, \texttt{min\_event\_len = 0.05}, \texttt{min\_event\_sep = 0.05}, \texttt{base\_fraction = 0.1}, correlation thresholds of \texttt{0.98/0.90/0.95} for top, bottom and middle segments, \texttt{shut\_amp\_fraction = 0.9}, blink amplitude range \texttt{[3, 50]}, \texttt{good\_ratio\_threshold = 0.7}, \texttt{min\_good\_blinks = 10}, \texttt{correlation\_threshold = 0.98}, \texttt{p\_avr\_threshold = 3}, and \texttt{z\_thresholds = [[0.9, 0.98], [2.0, 5.0]]}. The final SEED rerun used the same legacy defaults together with a boundary-only numerical safeguard, \texttt{amplitude\_gate\_tolerance = 5e-8} and \texttt{amplitude\_gate\_end\_window\_seconds = 30.0}, introduced after the near-end floating-point mismatch had been isolated.
+
+MATLAB reference outputs were produced with the EEGLAB \blinker{} plugin (version 1.2.0) through the repository's validation harness. For the SEED rerun this produced MATLAB pickles adjacent to each EDF file; for Murat the reference pickles were the existing per-recording \texttt{blinker\_results.pkl} artifacts used by the fresh-comparison runner.
+
+\subsection{Event-table harmonization and comparison metrics}
+
+The Python implementation stores blink boundaries as zero-based \texttt{left\_zero} and \texttt{right\_zero} indices. Before comparison, these columns were renamed to \texttt{start\_blink} and \texttt{end\_blink} and shifted by +1 sample so that the Python boundaries matched the one-based MATLAB convention. Comparisons then used a \num{20}-sample tolerance window.
+
+Per-recording summaries were built from the pairwise difference table produced by the evaluation utilities. Events classified as \texttt{share\_within\_tolerance} counted as strict true positives. Events classified as \texttt{matches\_within\_tolerance} satisfied the boundary window but failed at least one overlap or amplitude check; these were excluded from the strict count and included in the lenient count. False positives and false negatives were \texttt{detected\_only} and \texttt{ground\_truth\_only}, respectively. Macro metrics were obtained by averaging per-recording values, whereas micro metrics were computed from pooled totals across recordings.
+
+\subsection{Rerun discipline and artifact tracking}
+
+Long reruns were executed under explicit experiment prefixes so that each logic revision produced a distinct artifact set rather than overwriting previous results. The final retained prefixes were \texttt{exp08} for Murat and \texttt{seed\_exp04} for SEED. The validation harness wrote per-recording pickle outputs, rolling logs, live-status files for long jobs, and final summary CSV and overall JSON files. This file-based audit trail was treated as part of the methods because it allowed every retained change to be checked against fixed artifacts after the run completed.

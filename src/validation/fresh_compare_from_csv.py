@@ -20,11 +20,15 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from src.validation._paths import REPORTS_DIR
+from src.validation._paths import REPORTS_DIR, SUMMARY_METRICS_PATH
 from src.validation.blinker_params import build_experiment_blink_params
 from src.validation.blink_compare import load_pickle, process_recording_comparison
-from src.validation.blink_compare_from_csv import CSV_PATH, DATASET_ROOT, TOLERANCE_SAMPLES
 from src.validation.stat import RecordingComparison, build_overall_summary, build_summary_frame
+
+
+CSV_PATH = SUMMARY_METRICS_PATH
+DATASET_ROOT = Path("D:/dataset/murat_2018")
+TOLERANCE_SAMPLES = 20
 
 
 RESULTS_DIR = REPORTS_DIR
@@ -331,7 +335,7 @@ def _resolve_execution_mode(requested_mode: str, recording_count: int, *, plot: 
 def _resolve_max_workers(recording_count: int, explicit_max_workers: int | None) -> int:
     if explicit_max_workers is not None:
         return max(1, explicit_max_workers)
-    return max(1, min(8, os.cpu_count() or 1, recording_count))
+    return max(1, min(os.cpu_count() or 1, recording_count))
 
 
 def _print_recording_result(result: RecordingRunResult) -> None:

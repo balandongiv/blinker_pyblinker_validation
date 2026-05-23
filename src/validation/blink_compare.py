@@ -7,12 +7,12 @@ import math
 import pickle
 import sys
 from pathlib import Path
-from typing import Iterable, Mapping
+from typing import Mapping
 
 import mne
 import numpy as np
 import pandas as pd
-from pyblinker.utils.evaluation import blink_comparison
+from blink_evaluation import evaluate_annotations
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -27,6 +27,61 @@ LOGGER = logging.getLogger(__name__)
 
 def _coerce_path(path: str | Path) -> Path:
     return path if isinstance(path, Path) else Path(path)
+
+
+def events_to_annotations(events_df: pd.DataFrame, sfreq: float) -> mne.Annotations:
+    """Convert a start_blink/end_blink DataFrame (1-indexed samples) to mne.Annotations."""
+    if events_df.empty:
+        return mne.Annotations(onset=[], duration=[], description=[])
+    start = events_df["start_blink"].to_numpy(dtype=float)
+    end = events_df["end_blink"].to_numpy(dtype=float)
+    return mne.Annotations(
+        onset=(start - 1.0) / sfreq,
+        duration=(end - start) / sfreq,
+        description="blink",
+    )
+
+
+def build_comparison_metrics(result) -> dict[str, float]:
+    """Map a blink_evaluation EvaluationResult to the RecordingComparison metrics dict."""
+    tp = result.event_metrics.tp
+    fp = result.event_metrics.fp
+    fn = result.event_metrics.fn
+    total_gt = tp + fn
+    total_pred = tp + fp
+    unique_total = total_gt + total_pred
+    share = 2.0 * tp
+    share_pct = (share / unique_total * 100.0) if unique_total else float("nan")
+    return {
+        "total_ground_truth": float(total_gt),
+        "total_detected": float(total_pred),
+        "ground_truth_only": float(fn),
+        "detected_only": float(fp),
+        "share_within_tolerance": share,
+        "matches_within_tolerance": 0.0,
+        "pairs_outside_tolerance": 0.0,
+        "unique_total": float(unique_total),
+        "share_within_tolerance_percent": share_pct,
+    }
+
+
+def compare_events(
+    py_payload: Mapping,
+    blinker_payload: Mapping,
+    sfreq: float,
+    recording_duration: float,
+) -> tuple[pd.DataFrame, pd.DataFrame, dict[str, float]]:
+    """Compare PyBlinker and MATLAB Blinker events using blink_evaluation."""
+    py_events, blinker_events = prepare_event_tables(py_payload, blinker_payload)
+    result = evaluate_annotations(
+        events_to_annotations(blinker_events, sfreq),
+        events_to_annotations(py_events, sfreq),
+        target_label="blink",
+        iou_threshold=0.5,
+        sample_rate=sfreq,
+        recording_duration=recording_duration,
+    )
+    return py_events, blinker_events, build_comparison_metrics(result)
 
 
 def _load_raw(path: Path) -> mne.io.BaseRaw:
@@ -171,69 +226,6 @@ def prepare_event_tables(
     return py_events, blinker_events
 
 
-def iter_recordings(root: Path) -> Iterable[Path]:
-    for candidate in sorted(root.iterdir()):
-        if candidate.is_dir():
-            yield candidate
-
-
-def render_report(
-    summary: pd.DataFrame,
-    output_dir: Path,
-    *,
-    overall: pd.Series | None = None,
-) -> Path:
-    lines = ["# murat_2018 PyBlinker vs Blinker comparison", ""]
-    lines.append(
-        "| Recording | Detected | Ground truth | share_within_tolerance | matches_within_tolerance | Py-only | Blinker-only | Precision (strict) | Recall (strict) | F1 (strict) | Precision (lenient) | Recall (lenient) | F1 (lenient) |"
-    )
-    lines.append(
-        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"
-    )
-
-    for _, row in summary.iterrows():
-        def _fmt(value):
-            if pd.isna(value):
-                return "-"
-            if isinstance(value, float):
-                return f"{value:.3f}"
-            return str(int(value))
-
-        lines.append(
-            "| {recording_id} | {py_count} | {blinker_count} | {share} | {matches} | {py_only} | {blinker_only} | {precision_strict} | {recall_strict} | {f1_strict} | {precision_lenient} | {recall_lenient} | {f1_lenient} |".format(
-                recording_id=row["recording_id"],
-                py_count=_fmt(row["total_detected"]),
-                blinker_count=_fmt(row["total_ground_truth"]),
-                share=_fmt(row["share_within_tolerance"]),
-                matches=_fmt(row["matches_within_tolerance"]),
-                py_only=_fmt(row["detected_only"]),
-                blinker_only=_fmt(row["ground_truth_only"]),
-                precision_strict=_fmt(row["precision_strict"]),
-                recall_strict=_fmt(row["recall_strict"]),
-                f1_strict=_fmt(row["f1_strict"]),
-                precision_lenient=_fmt(row["precision_lenient"]),
-                recall_lenient=_fmt(row["recall_lenient"]),
-                f1_lenient=_fmt(row["f1_lenient"]),
-            )
-        )
-
-    if overall is not None and not overall.empty:
-        lines.extend(["", "## Overall summary", "", "| Metric | Value |", "| --- | ---: |"])
-
-        def _fmt_overall(value: float) -> str:
-            if pd.isna(value):
-                return "-"
-            if isinstance(value, float):
-                return f"{value:.3f}"
-            return str(value)
-
-        for metric, value in overall.items():
-            lines.append(f"| {metric} | {_fmt_overall(value)} |")
-
-    report_path = output_dir / "summary_report.md"
-    report_path.write_text("\n".join(lines), encoding="utf8")
-    return report_path
-
 
 def process_recording_comparison(
     recording_dir: str | Path,
@@ -245,7 +237,7 @@ def process_recording_comparison(
     tolerance_samples: int,
     overwrite: bool,
 ) -> RecordingComparison:
-    del fif_fname, overwrite
+    del fif_fname, overwrite, tolerance_samples
 
     recording_dir = _coerce_path(recording_dir)
     py_path = _coerce_path(py_path)
@@ -255,65 +247,21 @@ def process_recording_comparison(
     py_payload = load_pickle(py_path)
     blinker_payload = load_pickle(blinker_path)
 
-    channel = py_payload["metrics"]["channel"]
     raw = _load_raw(fif_path)
-    signal = raw.get_data(picks=[channel])[0]
-    py_events, blinker_events = prepare_event_tables(py_payload, blinker_payload)
+    sfreq = float(raw.info["sfreq"])
+    recording_duration = float(raw.times[-1])
 
-    comparison = blink_comparison.compare_detected_vs_ground_truth(
-        py_events,
-        blinker_events,
-        float(raw.info["sfreq"]),
-        tolerance_samples=tolerance_samples,
-        n_preview_rows=10,
-        n_diff_rows=20,
-        detected_signal=signal,
+    py_events, blinker_events, metrics = compare_events(
+        py_payload, blinker_payload, sfreq, recording_duration
     )
 
     return RecordingComparison(
         recording_id=recording_dir.name,
         py_events=py_events,
         blinker_events=blinker_events,
-        metrics=comparison.metrics,
+        metrics=metrics,
     )
 
-
-def compare_recordings_blinker_vs_pyblinker(
-    root: Path,
-    *,
-    tolerance_samples: int,
-    overwrite: bool = False,
-) -> list[RecordingComparison]:
-    """Compute per-recording comparisons for a dataset root."""
-
-    comparisons: list[RecordingComparison] = []
-
-    for recording_dir in iter_recordings(root):
-        py_path = recording_dir / "pyblinker_results.pkl"
-        blinker_path = recording_dir / "blinker_results.pkl"
-        fif_path = recording_dir / f"{recording_dir.name}.fif"
-
-        if not py_path.exists() or not blinker_path.exists():
-            LOGGER.debug("Skipping %s because expected pickle files are missing", recording_dir.name)
-            continue
-
-        if not fif_path.exists():
-            LOGGER.info("Skipping %s because raw file is missing: %s", recording_dir.name, fif_path)
-            continue
-
-        comparisons.append(
-            process_recording_comparison(
-                recording_dir,
-                py_path,
-                blinker_path,
-                fif_path,
-                recording_dir.name,
-                tolerance_samples=tolerance_samples,
-                overwrite=overwrite,
-            )
-        )
-
-    return comparisons
 
 
 def main() -> int:

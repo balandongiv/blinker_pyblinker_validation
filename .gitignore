@@ -10,3 +10,10 @@ __pycache__/
 !/reports/validation/.gitkeep
 /pyblinker/
 /ear_eog_experiment/
+/writing/main.bbl
+/writing/main.aux
+/writing/main.bcf
+/writing/main.blg
+/out/main.log
+/writing/main.out
+/xx_tes.py

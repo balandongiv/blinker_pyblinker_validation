@@ -61,7 +61,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--max-workers",
         type=int,
-        default=max(1, min(6, os.cpu_count() or 1)),
+        default=max(1, os.cpu_count() or 1),
         help="Maximum worker threads.",
     )
     parser.add_argument("--force-rerun", action="store_true", help="Regenerate outputs even if they exist.")
@@ -195,11 +195,13 @@ def main(argv: list[str] | None = None) -> int:
     results = []
 
     logger.info(
-        "starting full sweep prefix=%s dataset_root=%s recordings=%s max_workers=%s force_rerun=%s",
+        "starting full sweep prefix=%s dataset_root=%s recordings=%s "
+        "max_workers=%s (os.cpu_count=%s) force_rerun=%s",
         args.prefix,
         args.dataset_root,
         len(recording_ids),
         args.max_workers,
+        os.cpu_count(),
         args.force_rerun,
     )
     _write_status(
@@ -218,19 +220,29 @@ def main(argv: list[str] | None = None) -> int:
         finished=False,
     )
 
+    total_recordings = len(recording_ids)
+
+    def _recording_worker(recording_id: str):
+        logger.info(
+            "started recording=%s workers=%s total=%s",
+            recording_id,
+            args.max_workers,
+            total_recordings,
+        )
+        return process_recording(
+            recording_id,
+            dataset_root=args.dataset_root,
+            prefix=args.prefix,
+            tolerance_samples=args.tolerance_samples,
+            plot=False,
+            target_share_percent=args.target_share_percent,
+            force_rerun=args.force_rerun,
+        )
+
     future_to_recording: dict[object, str] = {}
     with ThreadPoolExecutor(max_workers=args.max_workers) as executor:
         for recording_id in recording_ids:
-            future = executor.submit(
-                process_recording,
-                recording_id,
-                dataset_root=args.dataset_root,
-                prefix=args.prefix,
-                tolerance_samples=args.tolerance_samples,
-                plot=False,
-                target_share_percent=args.target_share_percent,
-                force_rerun=args.force_rerun,
-            )
+            future = executor.submit(_recording_worker, recording_id)
             future_to_recording[future] = recording_id
 
         pending_futures = set(future_to_recording)
@@ -278,10 +290,14 @@ def main(argv: list[str] | None = None) -> int:
                         }
                     )
                     logger.info(
-                        "completed recording=%s share=%s status=%s",
+                        "completed recording=%s share=%s status=%s "
+                        "workers=%s progress=%s/%s",
                         recording_id,
                         share,
                         result.artifact_status,
+                        args.max_workers,
+                        len(completed),
+                        total_recordings,
                     )
 
             _write_status(

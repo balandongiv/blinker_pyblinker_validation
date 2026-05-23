@@ -3,9 +3,12 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 import pickle
 import sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
+import threading
 from pathlib import Path
 
 import mne
@@ -13,7 +16,6 @@ import numpy as np
 import pandas as pd
 from pyblinker.blinker.pyblinker import BlinkDetector
 from pyblinker.utils.annotation_utils import create_annotation
-from pyblinker.utils.evaluation import blink_comparison
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -22,7 +24,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from src.validation._paths import REPORTS_DIR
 from src.validation.blinker_params import build_experiment_blink_params
-from src.validation.blink_compare import load_pickle, prepare_event_tables
+from src.validation.blink_compare import compare_events, load_pickle
 from src.validation.stat import RecordingComparison, build_overall_summary, build_summary_frame
 
 
@@ -135,6 +137,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Tolerance window used for comparison metrics.",
     )
     parser.add_argument("--plot", action="store_true", help="Display EEG with blink annotations.")
+    parser.add_argument(
+        "--max-workers",
+        type=int,
+        default=None,
+        help="Maximum parallel worker threads. Defaults to os.cpu_count().",
+    )
     parser.add_argument(
         "--target-share-percent",
         type=float,
@@ -382,30 +390,23 @@ def _compare_subject(
     comparison_raw_path: Path,
     tolerance_samples: int,
 ) -> RecordingComparison:
+    del tolerance_samples
     py_payload = load_pickle(py_path)
     blinker_payload = load_pickle(blinker_path)
 
-    channel = py_payload["metrics"]["channel"]
     raw = _load_raw(comparison_raw_path)
-    signal = raw.get_data(picks=[channel])[0]
-    sample_rate = float(raw.info["sfreq"])
-    py_events, blinker_events = prepare_event_tables(py_payload, blinker_payload)
+    sfreq = float(raw.info["sfreq"])
+    recording_duration = float(raw.times[-1])
 
-    comparison = blink_comparison.compare_detected_vs_ground_truth(
-        py_events,
-        blinker_events,
-        sample_rate,
-        tolerance_samples=tolerance_samples,
-        n_preview_rows=10,
-        n_diff_rows=20,
-        detected_signal=signal,
+    py_events, blinker_events, metrics = compare_events(
+        py_payload, blinker_payload, sfreq, recording_duration
     )
 
     return RecordingComparison(
         recording_id=subject_id,
         py_events=py_events,
         blinker_events=blinker_events,
-        metrics=comparison.metrics,
+        metrics=metrics,
     )
 
 
@@ -561,6 +562,12 @@ def _print_subject_result(result: SubjectRunResult) -> None:
     )
 
 
+def _resolve_max_workers(subject_count: int, explicit_max_workers: int | None) -> int:
+    if explicit_max_workers is not None:
+        return max(1, explicit_max_workers)
+    return max(1, min(os.cpu_count() or 1, subject_count))
+
+
 def _run_subjects(
     subject_ids: list[str],
     *,
@@ -572,32 +579,77 @@ def _run_subjects(
     force_rerun: bool,
     continue_on_failure: bool,
     restrict_py_to_comparison_channels: bool,
+    max_workers: int = 1,
 ) -> list[SubjectRunResult]:
-    results: list[SubjectRunResult] = []
-
-    for subject_id in subject_ids:
-        result = process_subject(
-            subject_id,
-            config=config,
-            prefix=prefix,
-            tolerance_samples=tolerance_samples,
-            plot=plot,
-            target_share_percent=target_share_percent,
-            force_rerun=force_rerun,
-            restrict_py_to_comparison_channels=restrict_py_to_comparison_channels,
-        )
-        results.append(result)
-        _print_subject_result(result)
-
-        share = result.comparison.metrics.get("share_within_tolerance_percent")
-        if not _share_is_good(share, target_share_percent) and not continue_on_failure:
-            print(
-                f"[stop] {subject_id} did not reach the target "
-                f"{target_share_percent:.1f}% share. Stopping incremental run."
+    if max_workers == 1 or plot:
+        results: list[SubjectRunResult] = []
+        for subject_id in subject_ids:
+            result = process_subject(
+                subject_id,
+                config=config,
+                prefix=prefix,
+                tolerance_samples=tolerance_samples,
+                plot=plot,
+                target_share_percent=target_share_percent,
+                force_rerun=force_rerun,
+                restrict_py_to_comparison_channels=restrict_py_to_comparison_channels,
             )
-            break
+            results.append(result)
+            _print_subject_result(result)
 
-    return results
+            share = result.comparison.metrics.get("share_within_tolerance_percent")
+            if not _share_is_good(share, target_share_percent) and not continue_on_failure:
+                print(
+                    f"[stop] {subject_id} did not reach the target "
+                    f"{target_share_percent:.1f}% share. Stopping incremental run."
+                )
+                break
+        return results
+
+    total = len(subject_ids)
+    in_progress: set[str] = set()
+    completed_count = 0
+    lock = threading.Lock()
+
+    print(f"[parallel] {max_workers} workers | {total} subjects to process")
+
+    def _worker(subject_id: str) -> SubjectRunResult:
+        with lock:
+            in_progress.add(subject_id)
+            print(
+                f"[start] {subject_id} | workers={max_workers} "
+                f"in-progress={len(in_progress)}/{total}: {sorted(in_progress)}"
+            )
+        try:
+            return process_subject(
+                subject_id,
+                config=config,
+                prefix=prefix,
+                tolerance_samples=tolerance_samples,
+                plot=False,
+                target_share_percent=target_share_percent,
+                force_rerun=force_rerun,
+                restrict_py_to_comparison_channels=restrict_py_to_comparison_channels,
+            )
+        finally:
+            with lock:
+                in_progress.discard(subject_id)
+
+    results_by_id: dict[str, SubjectRunResult] = {}
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_map = {executor.submit(_worker, subject_id): subject_id for subject_id in subject_ids}
+        for future in as_completed(future_map):
+            result = future.result()
+            results_by_id[result.subject_id] = result
+            with lock:
+                completed_count += 1
+                remaining = total - completed_count
+            print(
+                f"[done] {result.subject_id} | completed={completed_count}/{total} remaining={remaining} "
+                f"in-progress={len(in_progress)}: {sorted(in_progress)}"
+            )
+            _print_subject_result(result)
+    return [results_by_id[subject_id] for subject_id in subject_ids if subject_id in results_by_id]
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -605,10 +657,11 @@ def main(argv: list[str] | None = None) -> int:
     config = _resolve_dataset_config(args)
     subject_ids = _resolve_subject_ids(args, config)
 
+    max_workers = _resolve_max_workers(len(subject_ids), getattr(args, "max_workers", None))
     print(
         f"[config] dataset={config.name}, subjects={len(subject_ids)}, "
         f"prefix={args.prefix}, plot={args.plot}, force_rerun={args.force_rerun}, "
-        f"continue_on_failure={args.continue_on_failure}, "
+        f"max_workers={max_workers}, continue_on_failure={args.continue_on_failure}, "
         f"restrict_py_to_comparison_channels={args.restrict_py_to_comparison_channels}"
     )
     print(
@@ -627,6 +680,7 @@ def main(argv: list[str] | None = None) -> int:
         force_rerun=args.force_rerun,
         continue_on_failure=args.continue_on_failure,
         restrict_py_to_comparison_channels=args.restrict_py_to_comparison_channels,
+        max_workers=max_workers,
     )
 
     processed_ids = [result.subject_id for result in results]

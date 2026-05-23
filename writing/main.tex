@@ -1,0 +1,73 @@
+\documentclass[11pt]{article}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage[margin=1in]{geometry}
+\usepackage{microtype}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{array}
+\usepackage{siunitx}
+\usepackage{csquotes}
+\usepackage{xurl}
+\usepackage{hyperref}
+\usepackage[nameinlink,noabbrev]{cleveref}
+\usepackage[
+  backend=biber,
+  style=numeric-comp,
+  sorting=none,
+  maxbibnames=99,
+  giveninits=true,
+  doi=true,
+  url=false,
+  isbn=false,
+  eprint=false
+]{biblatex}
+
+\addbibresource{references.bib}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue,
+  citecolor=blue,
+  urlcolor=blue,
+  pdftitle={MNE-PyBlinker: a faithful Python implementation of BLINKER validated across public motor-imagery and fatigue-driving EEG datasets}
+}
+
+\DeclareFieldFormat{doi}{\mkbibacro{DOI}\addcolon\space\href{https://doi.org/#1}{#1}}
+\AtEveryBibitem{
+  \clearfield{issn}
+  \clearfield{month}
+  \clearlist{language}
+}
+\setlength{\emergencystretch}{3em}
+\sisetup{
+  group-separator = {,},
+  group-minimum-digits = 4
+}
+
+\newcommand{\tool}{MNE-PyBlinker}
+\newcommand{\blinker}{BLINKER}
+
+\title{\tool: a faithful Python implementation of \blinker{} validated across public motor-imagery and fatigue-driving EEG datasets}
+\author{}
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+\input{abstract.tex}
+\end{abstract}
+
+\input{introduction.tex}
+\input{result.tex}
+\input{conclusion.tex}
+\input{methodology.tex}
+\input{code.tex}
+
+\printbibliography[title={References}]
+
+\end{document}

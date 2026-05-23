@@ -7,7 +7,7 @@ import unittest
 from unittest.mock import patch
 from uuid import uuid4
 
-from src.murat.download_dataset import (
+from src.utils.download_dataset import (
     MATLAB_73_SIGNATURE,
     DownloadError,
     _download_file,
@@ -192,7 +192,7 @@ class DownloadDatasetTests(unittest.TestCase):
             target = folder / "sample.mat"
             target.write_text("<html>error</html>", encoding="utf8")
 
-            from src.murat.download_dataset import DownloadTask
+            from src.utils.download_dataset import DownloadTask
 
             task = DownloadTask(
                 url="https://figshare.com/ndownloader/files/1",

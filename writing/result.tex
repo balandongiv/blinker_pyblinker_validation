@@ -1,0 +1,62 @@
+\section{Results}
+
+\subsection{Validation scale across two public EEG resources}
+
+The final benchmark covered 108 recordings and \num{156871} blink events per implementation. The motor-imagery validation used 74 locally staged EDF/FIF-compatible recordings derived from the public Murat 2018 resource, whereas the fatigue-driving validation used all 34 EDF recordings available in the local SEED-VLA/VRW staging area, comprising 20 laboratory files and 14 real-world files. Event totals in \cref{tab:datasets} are counts from one implementation; Python and MATLAB totals were identical for every dataset.
+
+\begin{table}[t]
+\centering
+\caption{Validation datasets and scale.}
+\label{tab:datasets}
+\begin{tabularx}{\linewidth}{@{}lXrr@{}}
+\toprule
+Dataset & Public source and local validation scope & Recordings & Blink events \\
+\midrule
+Murat 2018 motor-imagery EEG & Public motor-imagery dataset reported by Kaya \emph{et al.}; local validation used 74 EDF/FIF-compatible recordings processed by the fresh-comparison runner. & 74 & \num{72568} \\
+SEED-VLA/VRW fatigue-driving EEG & Public laboratory and real-world fatigue-driving datasets reported by Luo \emph{et al.}; local validation used all 34 EDF recordings in the staging area (20 laboratory, 14 real-world). & 34 & \num{84303} \\
+Combined & Two public EEG resources spanning motor-imagery and fatigue-driving paradigms. & 108 & \num{156871} \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Exact MATLAB--Python parity in the final retained runs}
+
+The final retained experiment prefixes were \texttt{exp08} for Murat and \texttt{seed\_exp04} for SEED. Every recording in both reruns achieved \texttt{share\_within\_tolerance\_percent = 100.0}. At the dataset level, the Python and MATLAB pipelines produced identical blink counts, zero Python-only events, and zero MATLAB-only events. Consequently, strict and lenient macro and micro precision, recall, F1 and accuracy were all 1.0 for both datasets.
+
+\begin{table}[t]
+\centering
+\caption{Final validation outcomes for the retained reruns.}
+\label{tab:parity}
+\footnotesize
+\begin{tabular}{@{}lcccc@{}}
+\toprule
+Dataset & 100\% rec. & Py/MATLAB blinks & Unmatched & Strict and lenient macro/micro metrics \\
+\midrule
+Murat 2018 & 74/74 & \num{72568}/\num{72568} & 0/0 & All P/R/F1/Acc values = 1.0 \\
+SEED-VLA/VRW & 34/34 & \num{84303}/\num{84303} & 0/0 & All P/R/F1/Acc values = 1.0 \\
+Combined & 108/108 & \num{156871}/\num{156871} & 0/0 & All P/R/F1/Acc values = 1.0 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Boundary-case debugging was necessary to reach exact parity}
+
+The perfect aggregate result in \cref{tab:parity} was not present in the first full SEED pass. Instead, complete reruns exposed two distinct boundary failures. In \texttt{real\_3}, a truncated blink extending to the last sample of the recording survived the Python pipeline and appeared as an extra terminal event. In \texttt{lab\_8}, the blink fit itself was present, but a near-end amplitude-gate decision differed by a very small floating-point margin and removed an otherwise valid event. An intermediate attempt to repair this behavior by broadening the tolerance globally restored \texttt{lab\_8} but created a new regression in \texttt{lab\_17}. The retained fix was therefore deliberately narrow: terminal-edge cleanup in the blink-geometry stage together with a boundary-only SEED rescue for the amplitude gate.
+
+\begin{table}[t]
+\centering
+\caption{Boundary mismatches isolated during the full-dataset reruns.}
+\label{tab:edgecases}
+\small
+\begin{tabularx}{\linewidth}{@{}lXX@{}}
+\toprule
+Recording & Failure mode & Retained resolution \\
+\midrule
+\texttt{real\_3} & Incomplete terminal-edge blink survived to the final event table & Explicit terminal-edge handling and cleanup \\
+\texttt{lab\_8} & Near-end amplitude gate rejected a valid boundary blink & Boundary-local SEED amplitude-gate rescue \\
+\texttt{lab\_17} & Regression introduced by an over-broad global tolerance change & Global tolerance change rejected \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+This debugging history matters because it shows that exact software migration is sensitive to edge conditions that are almost invisible in average-case summaries. The final code was kept only after targeted regression tests passed and both complete dataset reruns returned to exact parity, demonstrating that the repaired behavior fixed the boundary failures without sacrificing previously validated recordings.

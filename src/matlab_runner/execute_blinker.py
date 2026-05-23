@@ -9,7 +9,11 @@ import sys
 from pathlib import Path
 from typing import Dict, Iterable, Optional
 
-# import matlab.engine
+try:
+    import matlab.engine
+except ImportError:
+    pass
+
 import pandas as pd
 import numpy as np
 
@@ -181,6 +185,11 @@ def run_blinker(eng, edf_path: Path) -> Dict[str, pd.DataFrame]:
     return {key: to_dataframe(output[key]) for key in BLINKER_KEYS}
 
 
+def run_blinker_set(eng, set_path: Path) -> Dict[str, pd.DataFrame]:
+    output = eng.run_blinker_pipeline_wrap_set(str(set_path), nargout=1)
+    return {key: to_dataframe(output[key]) for key in BLINKER_KEYS}
+
+
 def _serialise_value(value):
     if isinstance(value, np.ndarray):
         if value.ndim == 0:
@@ -201,7 +210,7 @@ def _prepare_for_pickle(frame: pd.DataFrame) -> pd.DataFrame:
 
 
 def save_outputs(edf_path: Path, frames: Dict[str, pd.DataFrame], overwrite: bool) -> None:
-    out_dir = edf_path.parent / "blinker"
+    out_dir = edf_path.parent / f"blinker_{edf_path.stem}"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     for key, frame in frames.items():

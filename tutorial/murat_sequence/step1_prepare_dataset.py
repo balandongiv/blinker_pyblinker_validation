@@ -14,7 +14,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from src.murat.download_dataset import (  # noqa: E402 - deferred import for path setup
+from src.utils.download_dataset import (  # noqa: E402 - deferred import for path setup
     DEFAULT_LIMIT,
     DownloadError,
     download_dataset,
